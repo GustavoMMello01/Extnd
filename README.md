@@ -67,3 +67,7 @@ Local builds use ad hoc signing. After a rebuild, macOS may keep the screen-reco
 ```
 
 Open Extnd again, start the display, and grant screen-recording access when prompted.
+
+## Experimental fast cursor
+
+The [fast cursor validation plan](Experiments/WebRTC/README.md#fast-cursor-experiment) covers the optional WebRTC pointer overlay and explains how to compare it with the pointer captured in the video.

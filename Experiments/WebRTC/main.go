@@ -37,11 +37,13 @@ type bridge struct {
 	mu              sync.Mutex
 	peers           map[string]*webrtc.PeerConnection
 	requestKeyFrame func()
+	cursor          *cursorRelay
 }
 
 func main() {
 	sourceFlag := flag.String("source", "", "Extnd H.264 capture URL")
 	managed := flag.Bool("managed", false, "Report the viewer URL to the Extnd app")
+	fastCursor := flag.Bool("fast-cursor", false, "Enable the experimental cursor data channel")
 	flag.Parse()
 	source, err := url.Parse(*sourceFlag)
 	if err != nil || source.Scheme != "http" || net.ParseIP(source.Hostname()).To4() == nil ||
@@ -83,6 +85,38 @@ func main() {
 		Timeout:       2 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	var cursorPort string
+	if *managed && *fastCursor {
+		cursor, err := newCursorRelay()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer cursor.socket.Close()
+		b.cursor = cursor
+		cursorPort = strconv.Itoa(cursor.socket.LocalAddr().(*net.UDPAddr).Port)
+		go cursor.forward()
+		go cursor.notifyCapture(func(ready bool) {
+			action := "cursor-off"
+			if ready {
+				action = "cursor-on"
+			}
+			if err := postControl(client, source.JoinPath(action)); err != nil {
+				log.Printf("Could not update the cursor mode: %v", err)
+			}
+		})
+		mux.HandleFunc("POST "+path+"cursor/{id}/{state}", func(w http.ResponseWriter, r *http.Request) {
+			state := r.PathValue("state")
+			if state != "on" && state != "off" {
+				http.NotFound(w, r)
+				return
+			}
+			if !cursor.setReady(r.PathValue("id"), state == "on") {
+				http.Error(w, "Cursor channel is not ready.", http.StatusConflict)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
 	keyFrames := make(chan struct{}, 1)
 	b.requestKeyFrame = func() {
 		select {
@@ -115,7 +149,11 @@ func main() {
 	}
 	if *managed {
 		port := listener.Addr().(*net.TCPAddr).Port
-		if err := postControl(client, source.JoinPath("viewer", strconv.Itoa(port), viewerID)); err != nil {
+		controlPath := []string{"viewer", strconv.Itoa(port), viewerID}
+		if cursorPort != "" {
+			controlPath = append(controlPath, cursorPort)
+		}
+		if err := postControl(client, source.JoinPath(controlPath...)); err != nil {
 			log.Fatalf("Could not report the WebRTC session to Extnd: %v", err)
 		}
 	} else {
@@ -230,7 +268,7 @@ func (b *bridge) forward(stream io.Reader) error {
 
 func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
-	if len(b.peers) >= 2 {
+	if len(b.peers) >= 2 || (b.cursor != nil && len(b.peers) >= 1) {
 		b.mu.Unlock()
 		http.Error(w, "Too many active viewers.", http.StatusServiceUnavailable)
 		return
@@ -242,9 +280,20 @@ func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := randomID()
+	detachCursor := func() {}
+	if b.cursor != nil {
+		detachCursor, err = b.cursor.attach(peer, id)
+		if err != nil {
+			b.mu.Unlock()
+			_ = peer.Close()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	b.peers[id] = peer
 	b.mu.Unlock()
 	closePeer := func() {
+		detachCursor()
 		b.mu.Lock()
 		delete(b.peers, id)
 		b.mu.Unlock()
@@ -265,6 +314,7 @@ func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateDisconnected:
 			closePeer()
 		case webrtc.PeerConnectionStateClosed:
+			detachCursor()
 			b.mu.Lock()
 			delete(b.peers, id)
 			b.mu.Unlock()

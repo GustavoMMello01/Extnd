@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var session: SharingSession
     @State private var preferredAddress: String?
+    @State private var fastCursor = false
     @AppStorage("streamingMode") private var mode: StreamingMode = .mjpeg
 
     private var selectedAddress: String? {
@@ -55,6 +56,9 @@ struct HomeView: View {
                     }
                 }
                 Toggle("Show Streaming Stats on iPad", isOn: $session.showsStatistics)
+                if session.supportsFastCursor {
+                    Toggle("Experimental Fast Cursor", isOn: $session.fastCursorEnabled)
+                }
                 Text("Drag a window onto the Extnd display. You can arrange it in Displays in System Settings.")
                     .foregroundStyle(.secondary)
             } else {
@@ -75,10 +79,14 @@ struct HomeView: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(session.isBusy)
+                if mode.usesWebRTC {
+                    Toggle("Experimental Fast Cursor", isOn: $fastCursor)
+                        .disabled(session.isBusy)
+                }
                 HStack {
                     Button("Start Extended Display") {
                         guard let address = selectedAddress else { return }
-                        Task { await session.start(address: address, mode: mode) }
+                        Task { await session.start(address: address, mode: mode, fastCursor: fastCursor) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.isBusy || selectedAddress == nil)

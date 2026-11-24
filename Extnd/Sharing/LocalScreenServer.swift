@@ -32,6 +32,8 @@ final class LocalScreenServer {
     }
     var onReady: ((URL) -> Void)?
     var onViewerReady: ((URL) -> Void)?
+    var onCursorPort: ((UInt16) -> Void)?
+    var onCursorReady: ((Bool) -> Void)?
     var onKeyFrameRequest: (() -> Void)?
     var onFailure: ((String) -> Void)?
 
@@ -181,11 +183,20 @@ final class LocalScreenServer {
             send(connection, status: "204 No Content")
             return true
         }
+        if path == "/\(token)/cursor-on" || path == "/\(token)/cursor-off" {
+            onCursorReady?(path.hasSuffix("/cursor-on"))
+            send(connection, status: "204 No Content")
+            return true
+        }
         let segments = path.split(separator: "/")
-        guard segments.count == 4, segments[0] == token, segments[1] == "viewer",
+        guard (4...5).contains(segments.count), segments[0] == token, segments[1] == "viewer",
               let port = UInt16(segments[2]), port > 0,
               segments[3].utf8.count == 32, segments[3].utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
               let url = URL(string: "http://\(address):\(port)/\(segments[3])/") else { return false }
+        if segments.count == 5 {
+            guard let cursorPort = UInt16(segments[4]), cursorPort > 0 else { return false }
+            onCursorPort?(cursorPort)
+        }
         onViewerReady?(url)
         send(connection, status: "204 No Content")
         return true

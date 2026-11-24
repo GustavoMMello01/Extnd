@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,13 @@ func TestH264OverWebRTC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cursor, err := newCursorRelay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cursor.socket.Close()
+	b.cursor = cursor
+	go cursor.forward()
 	keyFrameRequests := make(chan struct{}, 4)
 	b.requestKeyFrame = func() { keyFrameRequests <- struct{}{} }
 	req := httptest.NewRequest(http.MethodPost, "/offer", nil)
@@ -47,6 +55,17 @@ func TestH264OverWebRTC(t *testing.T) {
 	defer receiver.Close()
 	got := make(chan string, 1)
 	receivedSSRC := make(chan uint32, 1)
+	cursorChannel := make(chan *webrtc.DataChannel, 1)
+	cursorMessages := make(chan []byte, 1)
+	receiver.OnDataChannel(func(channel *webrtc.DataChannel) {
+		channel.OnMessage(func(message webrtc.DataChannelMessage) {
+			select {
+			case cursorMessages <- message.Data:
+			default:
+			}
+		})
+		channel.OnOpen(func() { cursorChannel <- channel })
+	})
 	receiver.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		packet, _, err := track.ReadRTP()
 		if err != nil {
@@ -117,7 +136,40 @@ func TestH264OverWebRTC(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("the relay ignored the viewer's picture loss indication")
 			}
-			return
+			var channel *webrtc.DataChannel
+			select {
+			case channel = <-cursorChannel:
+			case <-ctx.Done():
+				t.Fatal("the receiver did not open the cursor data channel")
+			}
+			if channel.Ordered() || channel.MaxRetransmits() == nil || *channel.MaxRetransmits() != 0 {
+				t.Fatal("cursor data channel must avoid ordering and retransmission")
+			}
+			if cursor.setReady("stale-viewer", true) || !cursor.setReady(result.ID, true) {
+				t.Fatal("cursor readiness must belong to the active viewer")
+			}
+			socket, err := net.DialUDP("udp4", nil, cursor.socket.LocalAddr().(*net.UDPAddr))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer socket.Close()
+			want := []byte{3, 0, 0, 0, 1, 0, 64, 0, 127}
+			for {
+				if _, err := socket.Write(want); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case got := <-cursorMessages:
+					if !bytes.Equal(got, want) {
+						t.Fatalf("cursor packet = %v, want %v", got, want)
+					}
+					return
+				case <-ticks.C:
+					// The cursor channel deliberately sends unreliable messages.
+				case <-ctx.Done():
+					t.Fatal("the cursor packet did not reach the viewer")
+				}
+			}
 		case <-ticks.C:
 			err := b.forward(bytes.NewReader(append(header[:8:8], frame...)))
 			if !errors.Is(err, io.EOF) {

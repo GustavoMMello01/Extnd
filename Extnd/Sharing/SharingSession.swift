@@ -21,6 +21,19 @@ enum StreamingMode: String, CaseIterable {
     var width: Int { self == .webRTC60 ? 768 : 1024 }
     var height: Int { self == .webRTC60 ? 576 : 768 }
     var framesPerSecond: Int32 { self == .webRTC60 ? 60 : 30 }
+
+    func captureConfiguration(showsCursor: Bool) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = width
+        configuration.height = height
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: framesPerSecond)
+        configuration.queueDepth = 3
+        configuration.showsCursor = showsCursor
+        if usesWebRTC {
+            configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        }
+        return configuration
+    }
 }
 
 @MainActor
@@ -33,6 +46,14 @@ final class SharingSession: ObservableObject {
         didSet { server?.showsStatistics = showsStatistics }
     }
 
+    @Published private(set) var supportsFastCursor = false
+    @Published var fastCursorEnabled = false {
+        didSet { updateCursorMode() }
+    }
+
+    private var cursor: FastCursor?
+    private var cursorUpdate: Task<Void, Never>?
+    private var mode: StreamingMode?
     private var display: ExtndVirtualDisplay?
     private var server: LocalScreenServer?
     private var stream: SCStream?
@@ -44,7 +65,7 @@ final class SharingSession: ObservableObject {
         addresses = LocalScreenServer.localAddresses()
     }
 
-    func start(address: String, mode: StreamingMode) async {
+    func start(address: String, mode: StreamingMode, fastCursor: Bool) async {
         guard !isBusy, server == nil else { return }
         message = nil
         guard LocalScreenServer.localAddresses().contains(address) else {
@@ -84,21 +105,28 @@ final class SharingSession: ObservableObject {
                 }
             }
             let filter = SCContentFilter(display: source, excludingWindows: [])
-            let configuration = SCStreamConfiguration()
-            configuration.width = mode.width
-            configuration.height = mode.height
-            configuration.minimumFrameInterval = CMTime(value: 1, timescale: mode.framesPerSecond)
-            configuration.queueDepth = 3
-            configuration.showsCursor = true
-            if mode.usesWebRTC {
-                configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-            }
+            let configuration = mode.captureConfiguration(showsCursor: true)
             let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
             try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
             try await stream.startCapture()
             self.stream = stream
             self.output = output
             self.server = server
+            self.mode = mode
+            supportsFastCursor = mode.usesWebRTC && fastCursor
+            fastCursorEnabled = supportsFastCursor
+            let displayID = display.displayID
+            server.onCursorPort = { [weak self, weak server] port in
+                guard let self, let server, self.server === server, self.supportsFastCursor, self.cursor == nil else { return }
+                let cursor = FastCursor(port: port)
+                self.cursor = cursor
+                cursor.start(displayID: displayID)
+            }
+            server.onCursorReady = { [weak self, weak server] ready in
+                guard let self, let server, self.server === server, let cursor = self.cursor else { return }
+                cursor.viewerReady = ready
+                self.updateCursorMode()
+            }
             server.showsStatistics = showsStatistics
             if let encoder {
                 server.onKeyFrameRequest = { [weak encoder] in encoder?.requestKeyFrame() }
@@ -140,6 +168,13 @@ final class SharingSession: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         self.server = nil
+        cursorUpdate?.cancel()
+        cursorUpdate = nil
+        cursor?.stop()
+        cursor = nil
+        mode = nil
+        supportsFastCursor = false
+        fastCursorEnabled = false
         url = nil
         showsStatistics = false
         relayTimeout?.cancel()
@@ -155,10 +190,34 @@ final class SharingSession: ObservableObject {
         self.message = message
     }
 
+    private func updateCursorMode() {
+        guard cursorUpdate == nil, let cursor, let stream, let mode else { return }
+        cursorUpdate = Task { [weak self, weak cursor, weak stream] in
+            guard let self, let cursor, let stream else { return }
+            defer {
+                if self.cursor === cursor { self.cursorUpdate = nil }
+            }
+            while !Task.isCancelled {
+                let useOverlay = cursor.viewerReady && self.fastCursorEnabled
+                guard useOverlay != cursor.hidesVideoCursor else { return }
+                do {
+                    try await stream.updateConfiguration(mode.captureConfiguration(showsCursor: !useOverlay))
+                    guard self.cursor === cursor, !Task.isCancelled else { return }
+                    cursor.hidesVideoCursor = useOverlay
+                    self.server?.onKeyFrameRequest?()
+                } catch {
+                    guard self.cursor === cursor, !Task.isCancelled else { return }
+                    self.message = "Could not switch the cursor mode. \(error.localizedDescription)"
+                    return
+                }
+            }
+        }
+    }
+
     private func startRelay(at executable: URL, source: URL) {
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["-managed", "-source", source.absoluteString]
+        process.arguments = ["-managed", "-source", source.absoluteString] + (supportsFastCursor ? ["-fast-cursor"] : [])
         process.terminationHandler = { [weak self] process in
             Task { @MainActor in
                 guard let self, self.relay === process else { return }
