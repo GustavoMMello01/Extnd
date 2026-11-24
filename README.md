@@ -21,9 +21,11 @@ Extnd turns an iPad into an extended Mac display over the local network. The Mac
 
 The virtual desktop stays at 1024 × 768 in all modes. The MJPEG viewer also offers **Compatibility Mode**, which fetches JPEGs one at a time when the continuous stream cannot play.
 
-During a session, toggle **Show Streaming Stats on iPad** on the Mac to show or hide the overlay. WebRTC reports decoded FPS, video receive rate, resolution, and packet loss when Safari exposes them. The overlay labels source encoding rates when receiver statistics are unavailable. These figures describe the Extnd stream. Use the camera-based test below to measure cursor-to-display delay.
+During a session, toggle **Show Streaming Stats on iPad** on the Mac to show or hide the overlay. WebRTC reports decoded FPS, video receive rate, resolution, and packet loss when Safari exposes them. The overlay labels source encoding rates when receiver statistics are unavailable. These figures describe the Extnd stream. Use the [camera-based validation plan](Experiments/WebRTC/README.md#validation-plan) to measure cursor-to-display delay.
 
 ## How Extnd works
+
+[Architecture and technical specifications](ARCHITECTURE.md) covers the session lifecycle, wire formats, dependencies, test coverage, and latency roadmap.
 
 | Technology | Role |
 | --- | --- |
@@ -44,7 +46,39 @@ The viewer uses a fresh random URL per session and HTTP for page loading and sig
 3. **H.264 over WebRTC.** VideoToolbox encoded the display as video, and Pion switched media delivery to WebRTC over UDP. The iPad mini 3 on iOS 12.5.8 played the stream in a manual trial and felt more responsive than the earlier viewer.
 4. **Integrated WebRTC.** Xcode now bundles the relay, and the app launches it and displays the viewer QR code. The 60 fps mode trades some stream resolution for smoother motion, and picture-loss feedback helps the decoder recover without waiting for the next scheduled keyframe.
 
-For repeatable comparisons, see [WebRTC testing and diagnostics](Experiments/WebRTC/README.md). The Mac WebKit test used synthetic frames. End-to-end cursor latency and sustained 60 fps have yet to be measured on the target iPad.
+## Benchmark results
+
+These are local Mac measurements from macOS 26.6.2. A manual iPad mini 3 trial on iOS 12.5.8 confirmed WebRTC playback and reported better responsiveness than MJPEG. The tablet still needs a controlled measurement of sustained FPS and motion-to-display delay.
+
+### Fast cursor
+
+The Mac's WebKit viewer observed 24 matched synthetic state changes per profile over the same relay. The lead is how much earlier the cursor overlay updated compared with its matching video change.
+
+| WebRTC profile | Cursor ahead | Median lead | Observed range |
+| --- | ---: | ---: | ---: |
+| 1024 × 768 at 30 fps | 24/24 | 20 ms | 13–27 ms |
+| 768 × 576 at 60 fps | 24/24 | 17 ms | 14–23 ms |
+
+### Bitrate peaks
+
+Each profile encoded the same 360 synthetic frames at 768 × 576 and 60 fps, with high-detail bursts and forced keyframes. Rates are H.264 payload rates over sliding windows. The experimental profile lowered the 250 ms peak by about **28%** in this workload.
+
+| Profile | 250 ms peak | 250 ms p95 | 1 s peak | Encode p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | 8.38 Mb/s | 5.80 Mb/s | 3.53 Mb/s | 4.01 ms |
+| Reduce Bitrate Peaks | 6.01 Mb/s | 4.63 Mb/s | 2.33 Mb/s | 4.26 ms |
+
+### Stage timing example
+
+In a separate synthetic WebKit playback check, the viewer decoded about 60 fps with zero reported packet loss during the sampled interval. The timing overlay reported the following sender-side values for that interval.
+
+| Stage | p50 | p95 |
+| --- | ---: | ---: |
+| Encode and prepare the H.264 access unit | 3.6 ms | 4.7 ms |
+| Submit the encoded frame to the local relay feed | 0.1 ms | 0.2 ms |
+| Packetize and write RTP in the relay | 0.1 ms | 0.3 ms |
+
+See [WebRTC testing and diagnostics](Experiments/WebRTC/README.md) for the workloads, statistics and device comparisons. Both experiments remain opt-in.
 
 ## Build, test, and troubleshoot
 
@@ -58,7 +92,7 @@ cd Experiments/WebRTC
 go test ./...
 ```
 
-XCTest covers the app configuration, H.264 keyframes, MJPEG and statistics endpoints, and startup of the bundled relay. The Go test checks H.264 delivery to a WebRTC peer over UDP and verifies that picture-loss feedback reaches the relay.
+The 10 XCTest checks cover app configuration, H.264 keyframes, the bitrate option, MJPEG and statistics endpoints, the bundled relay, cursor packet format, and timing summaries. The Go checks cover WebRTC video over UDP, picture-loss feedback, cursor delivery, and relay statistics. The Go suite also passes with `go test -race ./...`.
 
 Local builds use ad hoc signing. After a rebuild, macOS may keep the screen-recording approval tied to an older copy of the app. To clear the old approval, quit Extnd and run:
 
@@ -71,3 +105,7 @@ Open Extnd again, start the display, and grant screen-recording access when prom
 ## Experimental fast cursor
 
 The [fast cursor validation plan](Experiments/WebRTC/README.md#fast-cursor-experiment) covers the optional WebRTC pointer overlay and explains how to compare it with the pointer captured in the video.
+
+## Experimental bitrate profile
+
+[Timing and bitrate tests](Experiments/WebRTC/README.md#timing-and-bitrate-experiment) explain the optional peak limit, per-stage statistics, and how to compare the result on the iPad.

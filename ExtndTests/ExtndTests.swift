@@ -148,17 +148,26 @@ extension ExtndTests {
     }
 
     @MainActor
-    private func verifyH264KeyFrame(mode: StreamingMode) async throws {
+    func testH264PeakLimitKeepsTheEncoderUsable() async throws {
+        try await verifyH264KeyFrame(mode: .webRTC60, limitBitratePeaks: true)
+    }
+
+    @MainActor
+    private func verifyH264KeyFrame(mode: StreamingMode, limitBitratePeaks: Bool = false) async throws {
         let ready = expectation(description: "VideoToolbox returned an H.264 key frame")
         let encoder = try H264Encoder(
-            width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond
+            width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond,
+            limitBitratePeaks: limitBitratePeaks
         ) { frame in
             XCTAssertTrue(frame.isKeyFrame)
             XCTAssertEqual(frame.bytes.prefix(4), Data([0, 0, 0, 1]))
             XCTAssertEqual(frame.bytes.dropFirst(4).first.map { $0 & 0x1F }, 7)
             XCTAssertEqual(frame.timestamp, 90_000)
+            XCTAssertGreaterThanOrEqual(frame.encodingMs, 0)
+            XCTAssertEqual(frame.captureAgeMs, 2.0)
             ready.fulfill()
         }
+        XCTAssertEqual(encoder.peakLimitStatus == .off, !limitBitratePeaks)
         var buffer: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(
             nil, mode.width, mode.height, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &buffer
@@ -172,7 +181,7 @@ extension ExtndTests {
             }
         }
         CVPixelBufferUnlockBaseAddress(image, [])
-        encoder.encode(image, at: CMTime(value: 1, timescale: 1))
+        encoder.encode(image, at: CMTime(value: 1, timescale: 1), captureAgeMs: 2.0)
         await fulfillment(of: [ready], timeout: 5)
         withExtendedLifetime(encoder) {}
     }
@@ -234,5 +243,21 @@ extension ExtndTests {
 
         let disabled = FastCursor.Position(point: CGPoint(x: -512, y: 424), bounds: bounds, active: false)
         XCTAssertEqual(disabled.packet(sequence: 10).first, 2)
+    }
+}
+
+extension ExtndTests {
+    func testTimingWindowReportsRecentPercentiles() throws {
+        var timing = TimingWindow()
+        let now: UInt64 = 10_000_000_000
+        timing.record(1000, at: now - 5_000_000_000)
+        timing.record(-1, at: now)
+        for value in 1...20 { timing.record(Double(value), at: now) }
+
+        let summary = try XCTUnwrap(timing.summarize(at: now))
+        XCTAssertEqual(summary.samples, 20)
+        XCTAssertEqual(summary.p50, 10)
+        XCTAssertEqual(summary.p95, 19)
+        XCTAssertNil(timing.summarize(at: now + 5_000_000_000))
     }
 }

@@ -10,7 +10,8 @@ struct ExtndApp: App {
         Window("Extnd", id: "main") {
             HomeView(session: session)
         }
-        .defaultSize(width: 600, height: 490)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 590, height: 550)
     }
 }
 

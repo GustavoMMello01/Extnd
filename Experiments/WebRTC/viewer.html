@@ -3,19 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Extnd WebRTC test</title>
+<title>Extnd</title>
 <style>
-body { margin: 0; background: #111; color: white; font: 16px -apple-system, sans-serif }
+body { margin: 0; background: #101817; color: #f0f6f2; font: 16px -apple-system, sans-serif }
+video { background: #101817 }
+#controls {
+  z-index: 2; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  box-sizing: border-box; width: calc(100% - 40px); max-width: 320px; padding: 24px;
+  background: #192421; border: 1px solid #33433c; border-radius: 16px; box-shadow: 0 12px 36px rgba(0,0,0,.24);
+}
+#controls h1 { margin: 0 0 4px; font-size: 27px; font-weight: 650; letter-spacing: -.8px }
+#controls p { margin: 0 0 16px; color: #abbcb3; font-size: 14px; line-height: 1.45 }
+#controls button {
+  width: 100%; min-height: 44px; border: 0; border-radius: 9px;
+  background: #a3edc6; color: #10291d; font: 600 15px -apple-system, sans-serif;
+}
+#controls button:disabled { background: #263932; color: #abbcb3 }
+#controls #status { margin: 12px 0 0 }
+#controls #status:empty { display: none }
 video { width: 100%; height: 100vh; object-fit: contain; position: absolute; top: 0; left: 0 }
 #pointer { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 1 }
-#controls { z-index: 2; position: relative; margin: 8px; padding: 8px; background: #222; width: fit-content }
-#stats { z-index: 2; position: absolute; top: 8px; right: 8px; margin: 0; max-width: calc(100% - 32px); padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,.44); color: white; font-size: 11px; line-height: 1.3; pointer-events: none }
+#stats { z-index: 2; position: absolute; top: 8px; right: 8px; margin: 0; max-width: calc(100% - 32px); padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,.44); color: white; font-size: 11px; line-height: 1.3; text-align: right; white-space: pre-line; pointer-events: none }
 </style>
 </head>
 <body>
 <video id="screen" autoplay muted playsinline></video>
 <canvas id="pointer" width="18" height="24" hidden aria-hidden="true"></canvas>
-<div id="controls"><button id="start">Start WebRTC</button> <span id="status" role="status"></span></div>
+<section id="controls">
+  <h1>Extnd</h1>
+  <p>Connect to your Mac display.</p>
+  <button id="start">Start WebRTC</button>
+  <p id="status" role="status"></p>
+</section>
 <p id="stats" hidden></p>
 <script src="stats.js"></script>
 <script>

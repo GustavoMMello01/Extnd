@@ -17,6 +17,20 @@ final class LocalScreenServer {
     private var encodedBytes = 0
     private let startedAt = ProcessInfo.processInfo.systemUptime
     var showsStatistics = false
+    var showsTiming = false
+    var peakLimitStatus: H264Encoder.PeakLimitStatus = .off
+    private var captureTiming = TimingWindow()
+    private var encodingTiming = TimingWindow()
+    private var handoffTiming = TimingWindow()
+    private var latestEncodedAt: UInt64?
+    private var lastTimedHandoffFrame = 0
+
+    private struct Timings: Encodable {
+        let capture: TimingWindow.Summary?
+        let encode: TimingWindow.Summary?
+        let handoff: TimingWindow.Summary?
+        let peakLimit: H264Encoder.PeakLimitStatus
+    }
 
     private struct Statistics: Encodable {
         let enabled: Bool
@@ -24,6 +38,7 @@ final class LocalScreenServer {
         let frames: Int?
         let encodedBytes: Int?
         let seconds: TimeInterval?
+        let timings: Timings?
     }
 
     private struct StreamClient {
@@ -82,6 +97,10 @@ final class LocalScreenServer {
     func update(h264 frame: H264Frame) {
         frameNumber += 1
         encodedBytes += frame.bytes.count
+        let now = DispatchTime.now().uptimeNanoseconds
+        if let age = frame.captureAgeMs { captureTiming.record(age, at: now) }
+        encodingTiming.record(frame.encodingMs, at: now)
+        latestEncodedAt = frame.readyAt
         publish(part: frame.wireData, isKeyFrame: frame.isKeyFrame)
     }
 
@@ -203,12 +222,20 @@ final class LocalScreenServer {
     }
 
     private func sendStatistics(to connection: NWConnection) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let timings = showsStatistics && showsTiming && webRTC ? Timings(
+            capture: captureTiming.summarize(at: now),
+            encode: encodingTiming.summarize(at: now),
+            handoff: handoffTiming.summarize(at: now),
+            peakLimit: peakLimitStatus
+        ) : nil
         let statistics = Statistics(
             enabled: showsStatistics,
             codec: showsStatistics ? (webRTC ? "H.264" : "MJPEG") : nil,
             frames: showsStatistics ? frameNumber : nil,
             encodedBytes: showsStatistics ? encodedBytes : nil,
-            seconds: showsStatistics ? ProcessInfo.processInfo.systemUptime - startedAt : nil
+            seconds: showsStatistics ? ProcessInfo.processInfo.systemUptime - startedAt : nil,
+            timings: timings
         )
         guard let body = try? JSONEncoder().encode(statistics) else {
             send(connection, status: "500 Internal Server Error")
@@ -248,6 +275,11 @@ final class LocalScreenServer {
         client.sentFrame = frameNumber
         client.isSending = true
         streams[id] = client
+        if let encodedAt = latestEncodedAt, lastTimedHandoffFrame != frameNumber {
+            lastTimedHandoffFrame = frameNumber
+            let now = DispatchTime.now().uptimeNanoseconds
+            handoffTiming.record(TimingWindow.milliseconds(from: encodedAt, to: now), at: now)
+        }
         sendStreamData(part, to: connection)
     }
 
@@ -310,6 +342,13 @@ final class LocalScreenServer {
         return (now - previous) / seconds;
       }
 
+      function intervalMeanMs(sum, previousSum, count, previousCount) {
+        if (typeof sum !== 'number' || typeof previousSum !== 'number' ||
+            typeof count !== 'number' || typeof previousCount !== 'number' ||
+            count <= previousCount || sum < previousSum) return null;
+        return 1000 * (sum - previousSum) / (count - previousCount);
+      }
+
       window.startStreamStatistics = function (getPeer, video) {
         var panel = document.getElementById('stats');
         var previousSource;
@@ -330,7 +369,17 @@ final class LocalScreenServer {
           var receiveBytes = rate(bytes, previousReceiver && previousReceiver.bytes, receiveSeconds);
           if (fps === null && inbound && typeof inbound.framesPerSecond === 'number') fps = inbound.framesPerSecond;
           previousSource = source;
-          previousReceiver = { time: time, frames: frames, bytes: bytes };
+          var bufferDelay = intervalMeanMs(inbound && inbound.jitterBufferDelay,
+            previousReceiver && previousReceiver.bufferDelay, inbound && inbound.jitterBufferEmittedCount,
+            previousReceiver && previousReceiver.bufferFrames);
+          var decodeDelay = intervalMeanMs(inbound && inbound.totalDecodeTime,
+            previousReceiver && previousReceiver.decodeDelay, inbound && inbound.framesDecoded,
+            previousReceiver && previousReceiver.decodedFrames);
+          previousReceiver = {
+            time: time, frames: frames, bytes: bytes,
+            bufferDelay: inbound && inbound.jitterBufferDelay, bufferFrames: inbound && inbound.jitterBufferEmittedCount,
+            decodeDelay: inbound && inbound.totalDecodeTime, decodedFrames: inbound && inbound.framesDecoded
+          };
 
           var details = [source.codec];
           if (video && video.videoWidth) details.push(video.videoWidth + ' × ' + video.videoHeight);
@@ -341,7 +390,25 @@ final class LocalScreenServer {
           if (inbound && typeof inbound.packetsLost === 'number') {
             details.push(Math.max(0, inbound.packetsLost) + ' packets lost');
           }
-          panel.textContent = details.join(' · ');
+          var lines = [details.join(' · ')];
+          if (source.timings) {
+            var stages = [];
+            function addTiming(label, timing) {
+              if (timing) stages.push(label + ' ' + timing.p50.toFixed(1) + '/' + timing.p95.toFixed(1) + ' ms');
+            }
+            addTiming('Capture', source.timings.capture);
+            addTiming('Encode', source.timings.encode);
+            addTiming('Handoff', source.timings.handoff);
+            addTiming('Relay', source.relayTiming);
+            if (stages.length) lines.push('p50/p95 · ' + stages.join(' · '));
+            var receiver = [];
+            if (bufferDelay !== null) receiver.push('Buffer avg ' + bufferDelay.toFixed(1) + ' ms');
+            if (decodeDelay !== null) receiver.push('Decode avg ' + decodeDelay.toFixed(1) + ' ms');
+            if (source.timings.peakLimit === 'configured') receiver.push('Peak limit configured');
+            if (source.timings.peakLimit === 'unavailable') receiver.push('Peak limit unavailable');
+            if (receiver.length) lines.push(receiver.join(' · '));
+          }
+          panel.textContent = lines.join('\\n');
           panel.hidden = false;
         }
 
@@ -399,10 +466,11 @@ final class LocalScreenServer {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Extnd</title>
     <style>
-    body { margin:0; background:#111; color:#eee; font:16px -apple-system,sans-serif; text-align:center }
+    body { margin:0; background:#101817; color:#f0f6f2; font:16px -apple-system,sans-serif; text-align:center }
     img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain }
-    p { position:relative; margin:32px 12px; pointer-events:none }
-    a { position:absolute; bottom:10px; right:10px; color:white; background:#222; padding:8px }
+    #status { position:relative; display:inline-block; margin:24px 12px; padding:9px 12px; background:#192421; border:1px solid #33433c; border-radius:10px; color:#abbcb3; pointer-events:none }
+    #status[hidden] { display:none }
+    #mode { position:absolute; bottom:10px; right:10px; color:#a3edc6; background:#192421; border-radius:8px; padding:10px 12px; font-size:12px; text-decoration:none }
     #stats { position:absolute; top:8px; right:8px; margin:0; max-width:calc(100% - 32px); padding:3px 6px; border-radius:4px; background:rgba(0,0,0,.44); color:#fff; font-size:11px; line-height:1.3 }
     </style>
     <img id="screen" alt="Extended Mac display" hidden>

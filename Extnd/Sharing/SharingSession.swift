@@ -46,6 +46,11 @@ final class SharingSession: ObservableObject {
         didSet { server?.showsStatistics = showsStatistics }
     }
 
+    @Published var showsTiming = false {
+        didSet { server?.showsTiming = showsTiming }
+    }
+    @Published private(set) var usesWebRTC = false
+
     @Published private(set) var supportsFastCursor = false
     @Published var fastCursorEnabled = false {
         didSet { updateCursorMode() }
@@ -65,7 +70,7 @@ final class SharingSession: ObservableObject {
         addresses = LocalScreenServer.localAddresses()
     }
 
-    func start(address: String, mode: StreamingMode, fastCursor: Bool) async {
+    func start(address: String, mode: StreamingMode, fastCursor: Bool, limitBitratePeaks: Bool) async {
         guard !isBusy, server == nil else { return }
         message = nil
         guard LocalScreenServer.localAddresses().contains(address) else {
@@ -92,7 +97,8 @@ final class SharingSession: ObservableObject {
             guard CGDisplayIsInMirrorSet(display.displayID) == 0 else { throw SetupError.displayMirrored }
             let server = try LocalScreenServer(address: address, webRTC: mode.usesWebRTC)
             let encoder = try mode.usesWebRTC ? H264Encoder(
-                width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond
+                width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond,
+                limitBitratePeaks: limitBitratePeaks
             ) { [weak server] frame in
                 Task { @MainActor in server?.update(h264: frame) }
             } : nil
@@ -113,6 +119,14 @@ final class SharingSession: ObservableObject {
             self.output = output
             self.server = server
             self.mode = mode
+            usesWebRTC = mode.usesWebRTC
+            server.showsTiming = showsTiming
+            if let encoder {
+                server.peakLimitStatus = encoder.peakLimitStatus
+                if encoder.peakLimitStatus == .unavailable {
+                    message = "The encoder did not accept the bitrate peak limit. Streaming with the standard settings."
+                }
+            }
             supportsFastCursor = mode.usesWebRTC && fastCursor
             fastCursorEnabled = supportsFastCursor
             let displayID = display.displayID
@@ -173,6 +187,8 @@ final class SharingSession: ObservableObject {
         cursor?.stop()
         cursor = nil
         mode = nil
+        usesWebRTC = false
+        showsTiming = false
         supportsFastCursor = false
         fastCursorEnabled = false
         url = nil

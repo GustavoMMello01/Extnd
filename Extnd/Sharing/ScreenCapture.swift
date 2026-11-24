@@ -18,7 +18,7 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, let pixels = buffer.imageBuffer else { return }
         if let encoder {
-            encoder.encode(pixels, at: buffer.presentationTimeStamp)
+            encoder.encode(pixels, at: buffer.presentationTimeStamp, captureAgeMs: Self.captureAge(of: buffer))
             return
         }
         let image = CIImage(cvPixelBuffer: pixels)
@@ -29,6 +29,15 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         ) {
             onFrame(jpeg)
         }
+    }
+
+    private static func captureAge(of buffer: CMSampleBuffer) -> Double? {
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]]
+        guard let displayTime = attachments?.first?[.displayTime] as? UInt64, displayTime != 0 else { return nil }
+        let display = CMClockMakeHostTimeFromSystemUnits(displayTime)
+        let arrival = CMClockGetTime(CMClockGetHostTimeClock())
+        let milliseconds = CMTimeSubtract(arrival, display).seconds * 1_000
+        return milliseconds.isFinite && milliseconds >= 0 ? milliseconds : nil
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {

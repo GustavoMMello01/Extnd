@@ -38,6 +38,7 @@ type bridge struct {
 	peers           map[string]*webrtc.PeerConnection
 	requestKeyFrame func()
 	cursor          *cursorRelay
+	timing          relayTiming
 }
 
 func main() {
@@ -132,8 +133,8 @@ func main() {
 			time.Sleep(250 * time.Millisecond)
 		}
 	}()
-	mux.HandleFunc("GET "+path+"stats", captureAsset(client, source.JoinPath("stats"), "application/json"))
-	mux.HandleFunc("GET "+path+"stats.js", captureAsset(client, source.JoinPath("stats.js"), "application/javascript; charset=utf-8"))
+	mux.HandleFunc("GET "+path+"stats", captureAsset(client, source.JoinPath("stats"), "application/json", b.addRelayTiming))
+	mux.HandleFunc("GET "+path+"stats.js", captureAsset(client, source.JoinPath("stats.js"), "application/javascript; charset=utf-8", nil))
 	mux.HandleFunc("POST "+path+"offer", b.offer)
 	mux.HandleFunc("POST "+path+"answer/{id}", b.answer)
 	server := http.Server{
@@ -216,7 +217,7 @@ func postControl(client *http.Client, target *url.URL) error {
 	return nil
 }
 
-func captureAsset(client *http.Client, target *url.URL, contentType string) http.HandlerFunc {
+func captureAsset(client *http.Client, target *url.URL, contentType string, transform func([]byte) []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target.String(), nil)
 		if err != nil {
@@ -236,9 +237,33 @@ func captureAsset(client *http.Client, target *url.URL, contentType string) http
 			http.Error(w, "Stream statistics unavailable.", http.StatusBadGateway)
 			return
 		}
+		if transform != nil {
+			body = transform(body)
+		}
 		w.Header().Set("Content-Type", contentType)
 		_, _ = w.Write(body)
 	}
+}
+
+func (b *bridge) addRelayTiming(body []byte) []byte {
+	var stats map[string]json.RawMessage
+	if err := json.Unmarshal(body, &stats); err != nil || stats["timings"] == nil {
+		return body
+	}
+	summary := b.timing.summarize(time.Now())
+	if summary == nil {
+		return body
+	}
+	relay, err := json.Marshal(summary)
+	if err != nil {
+		return body
+	}
+	stats["relayTiming"] = relay
+	result, err := json.Marshal(stats)
+	if err != nil {
+		return body
+	}
+	return result
 }
 
 func (b *bridge) forward(stream io.Reader) error {
@@ -256,6 +281,7 @@ func (b *bridge) forward(stream io.Reader) error {
 		if _, err := io.ReadFull(stream, frame); err != nil {
 			return err
 		}
+		started := time.Now()
 		timestamp := binary.BigEndian.Uint32(header[4:])
 		for _, packet := range packetizer.Packetize(frame, 0) {
 			packet.Timestamp = timestamp
@@ -263,6 +289,7 @@ func (b *bridge) forward(stream io.Reader) error {
 				log.Printf("Could not write RTP packet: %v", err)
 			}
 		}
+		b.timing.record(started, time.Now())
 	}
 }
 

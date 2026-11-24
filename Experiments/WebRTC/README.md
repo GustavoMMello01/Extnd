@@ -2,7 +2,7 @@
 
 Extnd includes the Go/Pion WebRTC relay. When a WebRTC session starts, the Mac app captures the virtual display with ScreenCaptureKit, encodes H.264 with VideoToolbox, and runs the relay. The relay reports the Safari viewer URL back to the app so the QR code opens the correct session.
 
-See the [Extnd README](../../README.md) for build requirements, setup steps, and the full technology overview.
+See the [Extnd README](../../README.md) for setup and benchmark results and the [architecture guide](../../ARCHITECTURE.md) for the design and technical specifications.
 
 ## Compare the modes on iPad
 
@@ -18,7 +18,7 @@ An FPS counter measures how many frames are decoded per second. To measure visib
 - If a WebRTC viewer fails, record the message displayed in Safari. A connection failure and a connected viewer waiting for its first decoded frame point to different stages.
 - The session uses local UDP for WebRTC video. Keep both devices on the same network and grant local network access if macOS asks.
 - Xcode builds the relay with [build-relay.sh](build-relay.sh), copies it into `Extnd.app/Contents/Helpers`, and signs it before signing the app bundle.
-- Run `go test ./...` in this directory to test H.264 RTP delivery and picture-loss feedback. Run XCTest from Xcode to test the relay startup and video encoding from the Mac side.
+- Run `go test ./...` in this directory to test H.264 RTP delivery, picture-loss feedback, the cursor channel and timing statistics. Run XCTest from Xcode to test the relay startup and video encoding from the Mac side.
 
 ## Fast cursor experiment
 
@@ -41,3 +41,31 @@ On macOS 26.6.2, an embedded WebKit viewer received both the overlay and H.264 v
 | 768 × 576 at 60 fps | 24 of 24 | 17 ms | 14–23 ms |
 
 The WebKit test also hid the overlay while the video continued playing. These are synthetic, same-Mac measurements. Keep the experiment opt-in until the iPad mini 3 confirms the gain, correctly tracks the display, and passes the dragging and fallback checks above.
+
+## Timing and bitrate experiment
+
+Select **Show Streaming Stats on iPad** and **Show Timing Details on iPad** during a WebRTC session. The extra lines show recent percentiles in milliseconds for:
+
+- **Capture** — WindowServer display timestamp to the ScreenCaptureKit callback, when sample metadata is available.
+- **Encode** — submission to VideoToolbox through preparation of the encoded frame.
+- **Handoff** — encoded frame ready to its submission to the Mac's local TCP feed.
+- **Relay** — RTP packetization and writes after the relay has received the complete frame.
+
+Sender values show p50 and p95 for up to four seconds of recent samples. When Safari provides the necessary counters, **Buffer avg** and **Decode avg** show per-frame means over the latest polling interval. These are separate stage timings. A filmed mouse or window movement measures the full path through the iPad display.
+
+Before starting a session, enable **Reduce Bitrate Peaks (Experimental)** to request an average of **1.6 Mb/s** and a one-second window limit of **2.4 Mb/s**. The standard profile requests a **2.0 Mb/s** average. VideoToolbox may reject the limit or produce output above the requested value depending on the encoder and content. The viewer reports whether the limit was configured.
+
+### Mac encoder comparison
+
+The test fed the same 360 synthetic frames at 768 × 576 and 60 fps to each profile. The sequence included high-detail bursts and forced keyframes. Rates below are encoded H.264 payload rates computed from sliding windows. The numbers exclude transport overhead and Wi-Fi.
+
+| Profile | 250 ms peak | 250 ms p95 | 1 s peak | Encode p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | 8.38 Mb/s | 5.80 Mb/s | 3.53 Mb/s | 4.01 ms |
+| Reduce Bitrate Peaks | 6.01 Mb/s | 4.63 Mb/s | 2.33 Mb/s | 4.26 ms |
+
+A short-window limit tested on its own reduced the single largest burst while increasing the 250 ms p95. The selected profile reduced both burst metrics in this synthetic workload.
+
+### Validate on iPad
+
+Compare two **WebRTC 60 fps** sessions on the same Wi-Fi and with the same cursor setting. Change only **Reduce Bitrate Peaks (Experimental)**. Repeat at least 20 drags of the same text-heavy window in each session, including fast scrolling. Compare the median and p95 visible window response using a high-frame-rate camera, and check text clarity and stalls. Keep the profile optional until the iPad results justify a default change.

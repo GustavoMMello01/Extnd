@@ -180,3 +180,23 @@ func TestH264OverWebRTC(t *testing.T) {
 		}
 	}
 }
+
+func TestRelayTimingOnlyAppearsWithTimingDetails(t *testing.T) {
+	b := &bridge{}
+	now := time.Now()
+	b.timing.record(now.Add(-time.Millisecond), now)
+	b.timing.record(now.Add(-3*time.Millisecond), now)
+	b.timing.record(now.Add(-6*time.Second), now.Add(-5*time.Second))
+
+	basic := []byte(`{"enabled":true}`)
+	if got := b.addRelayTiming(basic); !bytes.Equal(got, basic) {
+		t.Fatalf("timing leaked into basic stats: %s", got)
+	}
+	var stats struct {
+		RelayTiming timingSummary `json:"relayTiming"`
+	}
+	err := json.Unmarshal(b.addRelayTiming([]byte(`{"enabled":true,"timings":{"peakLimit":"off"}}`)), &stats)
+	if err != nil || stats.RelayTiming != (timingSummary{P50: 1, P95: 3, Samples: 2}) {
+		t.Fatalf("unexpected relay timing: %+v, error: %v", stats, err)
+	}
+}
