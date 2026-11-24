@@ -1,11 +1,21 @@
+import AppKit
 import SwiftUI
 
 @main
 struct ExtndApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var session = SharingSession()
+
     var body: some Scene {
-        WindowGroup {
-            HomeView()
+        Window("Extnd", id: "main") {
+            HomeView(session: session)
         }
-        .defaultSize(width: 640, height: 420)
+        .defaultSize(width: 600, height: 490)
+    }
+}
+
+private final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
