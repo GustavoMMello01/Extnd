@@ -1,28 +1,21 @@
-# H.264 over WebRTC experiment
+# WebRTC testing and diagnostics
 
-This experiment compares the standard MJPEG viewer with hardware-capable H.264 encoding in VideoToolbox and WebRTC delivery through Pion. Both modes capture the same 1024 × 768 virtual display and target up to 30 fps. The experiment requires Go 1.25 or later to build the relay. The regular macOS app and MJPEG mode still build without Go or third-party dependencies.
+Extnd includes the Go/Pion WebRTC relay. When a WebRTC session starts, the Mac app captures the virtual display with ScreenCaptureKit, encodes H.264 with VideoToolbox, and runs the relay. The relay reports the Safari viewer URL back to the app so the QR code opens the correct session.
 
-## Start the experiment
+See the [Extnd README](../../README.md) for build requirements, setup steps, and the full technology overview.
 
-1. Run Extnd from Xcode. Select the Mac's Wi-Fi address, enable **WebRTC Test (H.264)**, and click **Start Extended Display**. Allow screen capture when macOS asks. Copy the address shown by Extnd.
-2. From the repository root, start the relay. Replace the quoted value with the full address you copied:
+## Compare the modes on iPad
 
-   ```sh
-   cd Experiments/WebRTC
-   go run . -source 'http://MAC_IP:PORT/SESSION/'
-   ```
+1. Open Extnd, choose **WebRTC 60 fps**, and click **Start Extended Display**.
+2. Scan the QR code with the iPad, open the link in Safari, and tap **Start WebRTC**.
+3. On the Mac, enable **Show Streaming Stats on iPad**. Move the pointer and drag a window on the Extnd display. Note the decoded FPS and packet loss if Safari reports them.
+4. End the session and repeat with **WebRTC 30 fps** and **MJPEG**. Use the same network, device positions, and motions.
 
-3. On the iPad, open the **different URL printed by the relay** in Safari. Tap **Start WebRTC**. The page shows the decoded video size and, when Safari exposes it, the receive frame rate. Move a window to Extnd's display and move the mouse over it.
-4. Stop the Extnd session when done. To repeat in MJPEG mode, turn off the WebRTC checkbox, start a new session, and open the app's QR link.
+An FPS counter measures how many frames are decoded per second. To measure visible delay, film the physical mouse and the iPad in the same high-frame-rate recording. Count the frames from the start of the motion to the first visible cursor movement, then repeat several times for each mode.
 
-The relay uses local UDP candidates and needs the Mac and iPad on the same network. It uses a random URL for signaling over HTTP and WebRTC's encrypted media transport. Allow the relay on a trusted local network if the macOS firewall asks. No external signaling service or STUN/TURN server is used.
+## Diagnostics
 
-## Compare the modes
-
-Keep both devices in the same place, use the same Wi-Fi connection, and repeat the same cursor movements and window drags with each mode. If you can film both the physical mouse and the iPad with a high-frame-rate camera, count frames between the start of the motion and the first visible cursor movement. Compare several runs. The Safari frame-rate readout measures throughput, which does not establish end-to-end latency.
-
-The test still needs a real iPad mini 3 running iOS 12.5.8. If the Safari viewer fails, record the message shown beside **Start WebRTC**. That distinguishes negotiation problems from a connection that never delivers a decoded frame.
-
-## Local validation
-
-Run `go test ./...` from this directory to verify that a separate WebRTC peer receives H.264 RTP over UDP. Run XCTest from Xcode to verify the VideoToolbox encoder and the existing MJPEG server.
+- If a WebRTC viewer fails, record the message displayed in Safari. A connection failure and a connected viewer waiting for its first decoded frame point to different stages.
+- The session uses local UDP for WebRTC video. Keep both devices on the same network and grant local network access if macOS asks.
+- Xcode builds the relay with [build-relay.sh](build-relay.sh), copies it into `Extnd.app/Contents/Helpers`, and signs it before signing the app bundle.
+- Run `go test ./...` in this directory to test H.264 RTP delivery and picture-loss feedback. Run XCTest from Xcode to test the relay startup and video encoding from the Mac side.

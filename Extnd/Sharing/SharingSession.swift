@@ -1,31 +1,60 @@
 import Combine
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ScreenCaptureKit
+
+enum StreamingMode: String, CaseIterable {
+    case mjpeg
+    case webRTC30
+    case webRTC60
+
+    var title: String {
+        switch self {
+        case .mjpeg: "MJPEG"
+        case .webRTC30: "WebRTC 30 fps"
+        case .webRTC60: "WebRTC 60 fps"
+        }
+    }
+
+    var usesWebRTC: Bool { self != .mjpeg }
+    var width: Int { self == .webRTC60 ? 768 : 1024 }
+    var height: Int { self == .webRTC60 ? 576 : 768 }
+    var framesPerSecond: Int32 { self == .webRTC60 ? 60 : 30 }
+}
 
 @MainActor
 final class SharingSession: ObservableObject {
     @Published private(set) var addresses = LocalScreenServer.localAddresses()
-    @Published private(set) var isWebRTC = false
     @Published private(set) var url: URL?
     @Published private(set) var isBusy = false
     @Published private(set) var message: String?
+    @Published var showsStatistics = false {
+        didSet { server?.showsStatistics = showsStatistics }
+    }
 
     private var display: ExtndVirtualDisplay?
     private var server: LocalScreenServer?
     private var stream: SCStream?
+    private var relay: Process?
+    private var relayTimeout: Task<Void, Never>?
     private let captureQueue = DispatchQueue(label: "io.extnd.capture", qos: .userInitiated)
 
     func refreshAddresses() {
         addresses = LocalScreenServer.localAddresses()
     }
 
-    func start(address: String, webRTC: Bool) async {
+    func start(address: String, mode: StreamingMode) async {
         guard !isBusy, server == nil else { return }
         message = nil
         guard LocalScreenServer.localAddresses().contains(address) else {
             refreshAddresses()
             message = "The network address changed. Select an address and try again."
+            return
+        }
+        let relayExecutable = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/extnd-webrtc")
+        if mode.usesWebRTC, !FileManager.default.isExecutableFile(atPath: relayExecutable.path) {
+            message = "The WebRTC relay is missing. Rebuild Extnd in Xcode."
             return
         }
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
@@ -34,14 +63,16 @@ final class SharingSession: ObservableObject {
         }
 
         isBusy = true
-        defer { isBusy = false }
+        defer { if server == nil { isBusy = false } }
         do {
             guard let display = ExtndVirtualDisplay.make() else { throw SetupError.displayUnavailable }
             self.display = display
             let source = try await findDisplay(withID: display.displayID)
             guard CGDisplayIsInMirrorSet(display.displayID) == 0 else { throw SetupError.displayMirrored }
-            let server = try LocalScreenServer(address: address, webRTC: webRTC)
-            let encoder = try webRTC ? H264Encoder(width: 1024, height: 768) { [weak server] frame in
+            let server = try LocalScreenServer(address: address, webRTC: mode.usesWebRTC)
+            let encoder = try mode.usesWebRTC ? H264Encoder(
+                width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond
+            ) { [weak server] frame in
                 Task { @MainActor in server?.update(h264: frame) }
             } : nil
             let output = ScreenCapture(encoder: encoder) { [weak server] frame in
@@ -54,21 +85,39 @@ final class SharingSession: ObservableObject {
             }
             let filter = SCContentFilter(display: source, excludingWindows: [])
             let configuration = SCStreamConfiguration()
-            configuration.width = 1024
-            configuration.height = 768
-            configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            configuration.width = mode.width
+            configuration.height = mode.height
+            configuration.minimumFrameInterval = CMTime(value: 1, timescale: mode.framesPerSecond)
             configuration.queueDepth = 3
             configuration.showsCursor = true
+            if mode.usesWebRTC {
+                configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            }
             let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
             try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
             try await stream.startCapture()
             self.stream = stream
             self.output = output
             self.server = server
-            isWebRTC = webRTC
-            server.onReady = { [weak self, weak server] url in
-                guard let self, let server, self.server === server else { return }
+            server.showsStatistics = showsStatistics
+            if let encoder {
+                server.onKeyFrameRequest = { [weak encoder] in encoder?.requestKeyFrame() }
+            }
+            server.onViewerReady = { [weak self, weak server] url in
+                guard let self, let server, self.server === server, self.relay != nil, self.url == nil else { return }
+                self.relayTimeout?.cancel()
+                self.relayTimeout = nil
                 self.url = url
+                self.isBusy = false
+            }
+            server.onReady = { [weak self, weak server] source in
+                guard let self, let server, self.server === server else { return }
+                if mode.usesWebRTC {
+                    self.startRelay(at: relayExecutable, source: source)
+                } else {
+                    self.url = source
+                    self.isBusy = false
+                }
             }
             server.onFailure = { [weak self, weak server] error in
                 Task { @MainActor in
@@ -92,13 +141,41 @@ final class SharingSession: ObservableObject {
         defer { isBusy = false }
         self.server = nil
         url = nil
-        isWebRTC = false
+        showsStatistics = false
+        relayTimeout?.cancel()
+        relayTimeout = nil
+        let process = relay
+        relay = nil
+        if let process, process.isRunning { process.terminate() }
         server.stop()
         if let stream { try? await stream.stopCapture() }
         stream = nil
         output = nil
         display = nil
         self.message = message
+    }
+
+    private func startRelay(at executable: URL, source: URL) {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["-managed", "-source", source.absoluteString]
+        process.terminationHandler = { [weak self] process in
+            Task { @MainActor in
+                guard let self, self.relay === process else { return }
+                await self.stop(message: "The WebRTC relay stopped (exit code \(process.terminationStatus)).")
+            }
+        }
+        do {
+            try process.run()
+            relay = process
+            relayTimeout = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(8)) } catch { return }
+                guard let self, self.relay === process, self.url == nil else { return }
+                await self.stop(message: "The WebRTC relay did not start. Try starting a new session.")
+            }
+        } catch {
+            Task { await stop(message: "Could not start the WebRTC relay. \(error.localizedDescription)") }
+        }
     }
 
     private func findDisplay(withID id: CGDirectDisplayID) async throws -> SCDisplay {

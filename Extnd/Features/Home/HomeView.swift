@@ -5,7 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var session: SharingSession
     @State private var preferredAddress: String?
-    @State private var webRTC = false
+    @AppStorage("streamingMode") private var mode: StreamingMode = .mjpeg
 
     private var selectedAddress: String? {
         if let preferredAddress, session.addresses.contains(preferredAddress) {
@@ -26,17 +26,13 @@ struct HomeView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             Label("Extnd", systemImage: "display")
                 .font(.largeTitle.bold())
 
             if let url = session.url {
-                if session.isWebRTC {
-                    Text("Copy this address to start the WebRTC relay. See the experiment README.")
-                } else {
-                    Text("Connect your iPad to the same network as your Mac, then scan the QR code or open the address in Safari.")
-                }
-                if !session.isWebRTC, let qrImage = makeQRCode(for: url) {
+                Text("Connect your iPad to the same network as your Mac, then scan the QR code or open the address in Safari.")
+                if let qrImage = makeQRCode(for: url) {
                     Image(decorative: qrImage, scale: 1)
                         .interpolation(.none)
                         .resizable()
@@ -58,6 +54,7 @@ struct HomeView: View {
                         Task { await session.stop() }
                     }
                 }
+                Toggle("Show Streaming Stats on iPad", isOn: $session.showsStatistics)
                 Text("Drag a window onto the Extnd display. You can arrange it in Displays in System Settings.")
                     .foregroundStyle(.secondary)
             } else {
@@ -71,12 +68,17 @@ struct HomeView: View {
                     .fixedSize()
                     .disabled(session.isBusy)
                 }
-                Toggle("WebRTC Test (H.264)", isOn: $webRTC)
-                    .disabled(session.isBusy)
+                Picker("Streaming Mode", selection: $mode) {
+                    ForEach(StreamingMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(session.isBusy)
                 HStack {
                     Button("Start Extended Display") {
                         guard let address = selectedAddress else { return }
-                        Task { await session.start(address: address, webRTC: webRTC) }
+                        Task { await session.start(address: address, mode: mode) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.isBusy || selectedAddress == nil)

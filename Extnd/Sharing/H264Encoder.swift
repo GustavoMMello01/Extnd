@@ -1,5 +1,6 @@
 import Foundation
 import VideoToolbox
+import os
 
 struct H264Frame: Sendable {
     let bytes: Data
@@ -15,10 +16,14 @@ struct H264Frame: Sendable {
 }
 
 final class H264Encoder {
+    private let needsKeyFrame = OSAllocatedUnfairLock(initialState: false)
     private let session: VTCompressionSession
     private let onFrame: @Sendable (H264Frame) -> Void
 
-    init(width: Int32, height: Int32, onFrame: @escaping @Sendable (H264Frame) -> Void) throws {
+    init(
+        width: Int32, height: Int32, framesPerSecond: Int32 = 30,
+        onFrame: @escaping @Sendable (H264Frame) -> Void
+    ) throws {
         var encoder: VTCompressionSession?
         try Self.check(VTCompressionSessionCreate(
             allocator: nil, width: width, height: height,
@@ -32,11 +37,14 @@ final class H264Encoder {
                 kVTCompressionPropertyKey_RealTime: true,
                 kVTCompressionPropertyKey_AllowFrameReordering: false,
                 kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_Baseline_3_1,
-                kVTCompressionPropertyKey_ExpectedFrameRate: 30,
+                kVTCompressionPropertyKey_ExpectedFrameRate: framesPerSecond,
                 kVTCompressionPropertyKey_MaxKeyFrameInterval: 30,
-                kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 1,
+                kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 30.0 / Double(framesPerSecond),
                 kVTCompressionPropertyKey_AverageBitRate: 2_000_000
             ] as CFDictionary))
+            // Some encoder implementations do not support a frame delay limit.
+            let frameDelay = framesPerSecond == 60 ? 0 : 1
+            VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: frameDelay as CFNumber)
             try Self.check(VTCompressionSessionPrepareToEncodeFrames(encoder))
         } catch {
             VTCompressionSessionInvalidate(encoder)
@@ -50,10 +58,19 @@ final class H264Encoder {
         VTCompressionSessionInvalidate(session)
     }
 
+    func requestKeyFrame() {
+        needsKeyFrame.withLock { $0 = true }
+    }
+
     func encode(_ image: CVPixelBuffer, at time: CMTime) {
+        let forceKeyFrame = needsKeyFrame.withLock { pending in
+            defer { pending = false }
+            return pending
+        }
+        let frameProperties = forceKeyFrame ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
         VTCompressionSessionEncodeFrame(
             session, imageBuffer: image, presentationTimeStamp: time,
-            duration: .invalid, frameProperties: nil, infoFlagsOut: nil
+            duration: .invalid, frameProperties: frameProperties, infoFlagsOut: nil
         ) { [onFrame] status, _, sample in
             guard status == noErr, let sample, let frame = Self.makeFrame(sample) else { return }
             onFrame(frame)

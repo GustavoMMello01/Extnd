@@ -16,9 +16,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -30,14 +32,16 @@ var viewer []byte
 const h264Format = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"
 
 type bridge struct {
-	api   *webrtc.API
-	track *webrtc.TrackLocalStaticRTP
-	mu    sync.Mutex
-	peers map[string]*webrtc.PeerConnection
+	api             *webrtc.API
+	track           *webrtc.TrackLocalStaticRTP
+	mu              sync.Mutex
+	peers           map[string]*webrtc.PeerConnection
+	requestKeyFrame func()
 }
 
 func main() {
-	sourceFlag := flag.String("source", "", "Extnd session URL displayed in WebRTC test mode")
+	sourceFlag := flag.String("source", "", "Extnd H.264 capture URL")
+	managed := flag.Bool("managed", false, "Report the viewer URL to the Extnd app")
 	flag.Parse()
 	source, err := url.Parse(*sourceFlag)
 	if err != nil || source.Scheme != "http" || net.ParseIP(source.Hostname()).To4() == nil ||
@@ -45,13 +49,12 @@ func main() {
 		len(source.Path) != 38 || source.Path[0] != '/' || source.Path[37] != '/' {
 		log.Fatal("Pass the complete HTTP URL displayed by Extnd using -source.")
 	}
-	source = source.JoinPath("h264")
 
 	b, err := newBridge(source.Hostname())
 	if err != nil {
 		log.Fatal(err)
 	}
-	stream, err := openFeed(source)
+	stream, err := openFeed(source.JoinPath("h264"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,12 +71,35 @@ func main() {
 		_ = listener.Close()
 	}()
 
-	path := "/" + randomID() + "/"
+	viewerID := randomID()
+	path := "/" + viewerID + "/"
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+path+"{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(viewer)
 	})
+	client := &http.Client{
+		Transport:     &http.Transport{},
+		Timeout:       2 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	keyFrames := make(chan struct{}, 1)
+	b.requestKeyFrame = func() {
+		select {
+		case keyFrames <- struct{}{}:
+		default:
+		}
+	}
+	go func() {
+		for range keyFrames {
+			if err := postControl(client, source.JoinPath("keyframe")); err != nil {
+				log.Printf("Could not request a key frame: %v", err)
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+	}()
+	mux.HandleFunc("GET "+path+"stats", captureAsset(client, source.JoinPath("stats"), "application/json"))
+	mux.HandleFunc("GET "+path+"stats.js", captureAsset(client, source.JoinPath("stats.js"), "application/javascript; charset=utf-8"))
 	mux.HandleFunc("POST "+path+"offer", b.offer)
 	mux.HandleFunc("POST "+path+"answer/{id}", b.answer)
 	server := http.Server{
@@ -87,7 +113,14 @@ func main() {
 			mux.ServeHTTP(w, r)
 		}),
 	}
-	fmt.Printf("Open this URL in Safari on the iPad: http://%s%s\n", listener.Addr(), path)
+	if *managed {
+		port := listener.Addr().(*net.TCPAddr).Port
+		if err := postControl(client, source.JoinPath("viewer", strconv.Itoa(port), viewerID)); err != nil {
+			log.Fatalf("Could not report the WebRTC session to Extnd: %v", err)
+		}
+	} else {
+		fmt.Printf("Open this URL in Safari on the iPad: http://%s%s\n", listener.Addr(), path)
+	}
 	if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Fatal(err)
 	}
@@ -101,7 +134,7 @@ func newBridge(ip string) (*bridge, error) {
 	engine := &webrtc.MediaEngine{}
 	codec := webrtc.RTPCodecCapability{
 		MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: h264Format,
-		RTCPFeedback: []webrtc.RTCPFeedback{{Type: "nack"}},
+		RTCPFeedback: []webrtc.RTCPFeedback{{Type: "nack"}, {Type: "nack", Parameter: "pli"}, {Type: "ccm", Parameter: "fir"}},
 	}
 	if err := engine.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: codec, PayloadType: 102}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, err
@@ -131,6 +164,43 @@ func openFeed(source *url.URL) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("Extnd did not start an H.264 feed (%s). Start a session with WebRTC test mode enabled", response.Status)
 	}
 	return response.Body, nil
+}
+
+func postControl(client *http.Client, target *url.URL) error {
+	response, err := client.Post(target.String(), "application/octet-stream", nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("Extnd returned %s", response.Status)
+	}
+	return nil
+}
+
+func captureAsset(client *http.Client, target *url.URL, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target.String(), nil)
+		if err != nil {
+			http.Error(w, "Stream statistics unavailable.", http.StatusBadGateway)
+			return
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			http.Error(w, "Stream statistics unavailable.", http.StatusBadGateway)
+			return
+		}
+		defer response.Body.Close()
+		const maxBytes = 32 << 10
+		body, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
+		if err != nil || len(body) > maxBytes || response.StatusCode != http.StatusOK ||
+			response.Header.Get("Content-Type") != contentType {
+			http.Error(w, "Stream statistics unavailable.", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+	}
 }
 
 func (b *bridge) forward(stream io.Reader) error {
@@ -188,6 +258,10 @@ func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 	}()
 	peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
+		case webrtc.PeerConnectionStateConnected:
+			if b.requestKeyFrame != nil {
+				b.requestKeyFrame()
+			}
 		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateDisconnected:
 			closePeer()
 		case webrtc.PeerConnectionStateClosed:
@@ -196,7 +270,7 @@ func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 			b.mu.Unlock()
 		}
 	})
-	err = prepareOffer(r.Context(), peer, b.track)
+	err = prepareOffer(r.Context(), peer, b.track, b.requestKeyFrame)
 	if err != nil {
 		closePeer()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -209,16 +283,24 @@ func (b *bridge) offer(w http.ResponseWriter, r *http.Request) {
 	}{id, peer.LocalDescription()})
 }
 
-func prepareOffer(ctx context.Context, peer *webrtc.PeerConnection, track *webrtc.TrackLocalStaticRTP) error {
+func prepareOffer(ctx context.Context, peer *webrtc.PeerConnection, track *webrtc.TrackLocalStaticRTP, requestKeyFrame func()) error {
 	transceiver, err := peer.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 	if err != nil {
 		return err
 	}
 	go func() {
-		buffer := make([]byte, 1500)
 		for {
-			if _, _, err := transceiver.Sender().Read(buffer); err != nil {
+			packets, _, err := transceiver.Sender().ReadRTCP()
+			if err != nil {
 				return
+			}
+			for _, packet := range packets {
+				switch packet.(type) {
+				case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
+					if requestKeyFrame != nil {
+						requestKeyFrame()
+					}
+				}
 			}
 		}
 	}()

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -21,6 +22,8 @@ func TestH264OverWebRTC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	keyFrameRequests := make(chan struct{}, 4)
+	b.requestKeyFrame = func() { keyFrameRequests <- struct{}{} }
 	req := httptest.NewRequest(http.MethodPost, "/offer", nil)
 	offerResponse := httptest.NewRecorder()
 	b.offer(offerResponse, req)
@@ -43,6 +46,7 @@ func TestH264OverWebRTC(t *testing.T) {
 	}
 	defer receiver.Close()
 	got := make(chan string, 1)
+	receivedSSRC := make(chan uint32, 1)
 	receiver.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		packet, _, err := track.ReadRTP()
 		if err != nil {
@@ -53,6 +57,7 @@ func TestH264OverWebRTC(t *testing.T) {
 			got <- "incorrect RTP timestamp"
 			return
 		}
+		receivedSSRC <- uint32(track.SSRC())
 		got <- track.Codec().MimeType
 	})
 	if err := receiver.SetRemoteDescription(result.Offer); err != nil {
@@ -96,6 +101,21 @@ func TestH264OverWebRTC(t *testing.T) {
 		case codec := <-got:
 			if !strings.EqualFold(codec, webrtc.MimeTypeH264) {
 				t.Fatalf("received %s", codec)
+			}
+			select {
+			case <-keyFrameRequests:
+			case <-ctx.Done():
+				t.Fatal("no key frame requested when the viewer connected")
+			}
+			if err := receiver.WriteRTCP([]rtcp.Packet{
+				&rtcp.PictureLossIndication{MediaSSRC: <-receivedSSRC},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-keyFrameRequests:
+			case <-ctx.Done():
+				t.Fatal("the relay ignored the viewer's picture loss indication")
 			}
 			return
 		case <-ticks.C:
