@@ -4,6 +4,13 @@
 	classes = {};
 	objectVersion = 56;
 	objects = {
+		000000000000000000000042 = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>";};
+		000000000000000000000043 = {isa = PBXBuildFile; fileRef = 000000000000000000000042;};
+		000000000000000000000044 = {isa = PBXFileReference; lastKnownFileType = image.png; path = "favicon.png"; sourceTree = "<group>";};
+		000000000000000000000045 = {isa = PBXBuildFile; fileRef = 000000000000000000000044;};
+		000000000000000000000046 = {isa = PBXFileReference; lastKnownFileType = image.png; path = "apple-touch-icon.png"; sourceTree = "<group>";};
+		000000000000000000000047 = {isa = PBXBuildFile; fileRef = 000000000000000000000046;};
+		000000000000000000000048 = {isa = PBXGroup; children = (000000000000000000000042, 000000000000000000000044, 000000000000000000000046); path = Resources; sourceTree = "<group>";};
 		000000000000000000000040 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamTiming.swift; sourceTree = "<group>";};
 		000000000000000000000041 = {isa = PBXBuildFile; fileRef = 000000000000000000000040;};
 		00000000000000000000003E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastCursor.swift; sourceTree = "<group>";};
@@ -47,7 +54,7 @@
 		000000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = wrapper.application; path = Extnd.app; sourceTree = "BUILT_PRODUCTS_DIR";};
 		000000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = ExtndTests.xctest; sourceTree = "BUILT_PRODUCTS_DIR";};
 		00000000000000000000000A = {isa = PBXGroup; children = (000000000000000000000007, 000000000000000000000008, 000000000000000000000004, 000000000000000000000009); sourceTree = "<group>";};
-		000000000000000000000007 = {isa = PBXGroup; children = (00000000000000000000000B, 00000000000000000000000C, 000000000000000000000035, 000000000000000000000036); path = Extnd; sourceTree = "<group>";};
+		000000000000000000000007 = {isa = PBXGroup; children = (00000000000000000000000B, 00000000000000000000000C, 000000000000000000000035, 000000000000000000000036, 000000000000000000000048); path = Extnd; sourceTree = "<group>";};
 		00000000000000000000000B = {isa = PBXGroup; children = (000000000000000000000001); path = App; sourceTree = "<group>";};
 		00000000000000000000000C = {isa = PBXGroup; children = (00000000000000000000000D); path = Features; sourceTree = "<group>";};
 		00000000000000000000000D = {isa = PBXGroup; children = (000000000000000000000002); path = Home; sourceTree = "<group>";};
@@ -58,7 +65,7 @@
 		000000000000000000000010 = {isa = PBXBuildFile; fileRef = 000000000000000000000003;};
 		000000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000000E, 00000000000000000000000F, 000000000000000000000037, 000000000000000000000038, 000000000000000000000039, 00000000000000000000003A, 00000000000000000000003C, 00000000000000000000003F, 000000000000000000000041); runOnlyForDeploymentPostprocessing = 0;};
 		000000000000000000000012 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
-		000000000000000000000013 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000013 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000043, 000000000000000000000045, 000000000000000000000047); runOnlyForDeploymentPostprocessing = 0;};
 		000000000000000000000015 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000014; buildPhases = (000000000000000000000011, 000000000000000000000012, 000000000000000000000013, 00000000000000000000003D); buildRules = (); dependencies = (); name = Extnd; productName = Extnd; productReference = 000000000000000000000005; productType = "com.apple.product-type.application";};
 		000000000000000000000016 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000010); runOnlyForDeploymentPostprocessing = 0;};
 		000000000000000000000017 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
@@ -92,6 +99,7 @@
 			CURRENT_PROJECT_VERSION = "1";
 			GENERATE_INFOPLIST_FILE = "YES";
 			INFOPLIST_KEY_CFBundleDevelopmentRegion = en;
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 			CLANG_ENABLE_OBJC_ARC = YES;
 			ENABLE_USER_SCRIPT_SANDBOXING = NO;
 			SWIFT_OBJC_BRIDGING_HEADER = Extnd/Display/VirtualDisplay.h;
@@ -104,6 +112,7 @@
 			CURRENT_PROJECT_VERSION = "1";
 			GENERATE_INFOPLIST_FILE = "YES";
 			INFOPLIST_KEY_CFBundleDevelopmentRegion = en;
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 			CLANG_ENABLE_OBJC_ARC = YES;
 			ENABLE_USER_SCRIPT_SANDBOXING = NO;
 			SWIFT_OBJC_BRIDGING_HEADER = Extnd/Display/VirtualDisplay.h;

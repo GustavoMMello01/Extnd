@@ -135,6 +135,9 @@ func main() {
 	}()
 	mux.HandleFunc("GET "+path+"stats", captureAsset(client, source.JoinPath("stats"), "application/json", b.addRelayTiming))
 	mux.HandleFunc("GET "+path+"stats.js", captureAsset(client, source.JoinPath("stats.js"), "application/javascript; charset=utf-8", nil))
+	for _, icon := range []string{"favicon.png", "apple-touch-icon.png"} {
+		mux.HandleFunc("GET "+path+icon, captureAsset(client, source.JoinPath(icon), "image/png", nil))
+	}
 	mux.HandleFunc("POST "+path+"offer", b.offer)
 	mux.HandleFunc("POST "+path+"answer/{id}", b.answer)
 	server := http.Server{

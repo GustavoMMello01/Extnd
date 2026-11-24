@@ -42,6 +42,9 @@ final class SharingSession: ObservableObject {
     @Published private(set) var url: URL?
     @Published private(set) var isBusy = false
     @Published private(set) var message: String?
+    var showsBlackBorder = true {
+        didSet { server?.showsBlackBorder = showsBlackBorder }
+    }
     @Published var showsStatistics = false {
         didSet { server?.showsStatistics = showsStatistics }
     }
@@ -141,6 +144,7 @@ final class SharingSession: ObservableObject {
                 cursor.viewerReady = ready
                 self.updateCursorMode()
             }
+            server.showsBlackBorder = showsBlackBorder
             server.showsStatistics = showsStatistics
             if let encoder {
                 server.onKeyFrameRequest = { [weak encoder] in encoder?.requestKeyFrame() }
