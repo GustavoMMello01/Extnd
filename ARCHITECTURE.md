@@ -33,14 +33,14 @@ flowchart LR
 
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
-| App and UI | Swift 6, SwiftUI, AppKit | Session state, network and mode selection, permission feedback, clipboard, and app lifecycle. The interface follows light and dark system appearances. |
+| App and UI | Swift 6, SwiftUI, AppKit | Session state, network and mode selection, permission feedback, clipboard, and app lifecycle. The interface offers system, light, and dark appearance preferences. |
 | Display | Objective-C bridge, private CoreGraphics virtual-display API | Creates the separate monitor and exposes its CoreGraphics display ID to Swift. The bridge resolves the virtual-display classes at runtime. |
 | Capture | ScreenCaptureKit, CoreMedia, CoreVideo | Delivers frames and timestamps for the chosen display. Capture uses a queue depth of 3, a 30 or 60 fps target interval, and video-range bi-planar YCbCr in WebRTC modes. |
 | H.264 encoding | VideoToolbox | Produces real-time H.264 Baseline Level 3.1 with frame reordering disabled. It requests a frame-delay limit of 0 in the 60 fps profile and 1 in the 30 fps profile where supported. |
 | JPEG and QR generation | Core Image | Encodes independent JPEGs for MJPEG, and produces a QR code for the session's viewer URL. |
 | Mac-local service | Network.framework | Hosts MJPEG, responds to viewer statistics, and supplies the H.264 feed and relay controls. The H.264 feed and WebRTC control endpoints check that the requester is local and holds the session path. |
 | Relay and deployment | Go, Pion WebRTC v4.2.29, Xcode | Packetizes H.264, runs WebRTC signaling, and forwards media and cursor data. A build phase builds the required architectures, embeds the relay in `Extnd.app/Contents/Helpers`, and signs it before the app bundle is signed. |
-| Browser | Safari, HTML, CSS, JavaScript, Canvas | Plays the video, displays the optional statistics overlay, and draws the experimental cursor when the separate channel is active. |
+| Browser | Safari, HTML, CSS, JavaScript, Canvas | Plays the video, displays the optional statistics overlay, draws the experimental cursor when the separate channel is active, and renders the optional picture border separately from the video. |
 | Tests | XCTest, Go test and the Go race detector | Cover configuration, encoder output, HTTP behavior, managed relay startup, UDP media, picture-loss feedback, cursor messages, and timing summaries. |
 
 ### Video formats and transport

@@ -17,6 +17,7 @@ final class LocalScreenServer {
     private var encodedBytes = 0
     private let startedAt = ProcessInfo.processInfo.systemUptime
     var showsStatistics = false
+    var showsBlackBorder = true
     var showsTiming = false
     var peakLimitStatus: H264Encoder.PeakLimitStatus = .off
     private var captureTiming = TimingWindow()
@@ -34,6 +35,7 @@ final class LocalScreenServer {
 
     private struct Statistics: Encodable {
         let enabled: Bool
+        let blackBorder: Bool
         let codec: String?
         let frames: Int?
         let encodedBytes: Int?
@@ -185,6 +187,14 @@ final class LocalScreenServer {
         case "/\(token)/stats.js" where !webRTC || isLocalPeer(connection):
             send(connection, status: "200 OK", type: "application/javascript; charset=utf-8",
                  body: Data(Self.statisticsScript.utf8))
+        case "/\(token)/favicon.png", "/\(token)/apple-touch-icon.png":
+            if (!webRTC || isLocalPeer(connection)),
+               let name = path.split(separator: "/").last,
+               let icon = Self.viewerIcons[String(name)] {
+                send(connection, status: "200 OK", type: "image/png", body: icon)
+            } else {
+                send(connection, status: "404 Not Found")
+            }
         case "/\(token)/frame.jpg" where !webRTC:
             if let latestFrame {
                 send(connection, status: "200 OK", type: "image/jpeg", body: latestFrame)
@@ -231,6 +241,7 @@ final class LocalScreenServer {
         ) : nil
         let statistics = Statistics(
             enabled: showsStatistics,
+            blackBorder: showsBlackBorder,
             codec: showsStatistics ? (webRTC ? "H.264" : "MJPEG") : nil,
             frames: showsStatistics ? frameNumber : nil,
             encodedBytes: showsStatistics ? encodedBytes : nil,
@@ -349,12 +360,39 @@ final class LocalScreenServer {
         return 1000 * (sum - previousSum) / (count - previousCount);
       }
 
-      window.startStreamStatistics = function (getPeer, video) {
+      window.startStreamStatistics = function (getPeer, video, getPicture) {
         var panel = document.getElementById('stats');
+        var frame = document.getElementById('stream-frame');
+        var pictureRatio = 0;
         var previousSource;
         var previousReceiver;
         var previousPeer;
         var sampleNumber = 0;
+
+        function layoutFrame() {
+          if (!frame) return;
+          var picture = getPicture ? getPicture() : video;
+          if (!picture) return;
+          var width = picture.videoWidth || picture.naturalWidth;
+          var height = picture.videoHeight || picture.naturalHeight;
+          if (width && height) pictureRatio = width / height;
+          if (frame.hidden) return;
+
+          var rect = picture.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          var fittedWidth = pictureRatio ? Math.min(rect.width, rect.height * pictureRatio) : rect.width;
+          var fittedHeight = pictureRatio ? fittedWidth / pictureRatio : rect.height;
+          frame.style.left = (rect.left + (rect.width - fittedWidth) / 2) + 'px';
+          frame.style.top = (rect.top + (rect.height - fittedHeight) / 2) + 'px';
+          frame.style.width = fittedWidth + 'px';
+          frame.style.height = fittedHeight + 'px';
+        }
+
+        window.addEventListener('resize', layoutFrame);
+        if (video) {
+          video.addEventListener('loadedmetadata', layoutFrame);
+          video.addEventListener('resize', layoutFrame);
+        }
 
         function render(source, inbound, time) {
           var sourceSeconds = previousSource ? source.seconds - previousSource.seconds : 0;
@@ -428,6 +466,10 @@ final class LocalScreenServer {
             setTimeout(tick, 1000);
             var source;
             try { if (request.status === 200) source = JSON.parse(request.responseText); } catch (error) {}
+            if (frame && source && typeof source.blackBorder === 'boolean' && frame.hidden === source.blackBorder) {
+              frame.hidden = !source.blackBorder;
+              layoutFrame();
+            }
             if (!source || !source.enabled) {
               reset();
             } else {
@@ -455,9 +497,21 @@ final class LocalScreenServer {
           request.send();
         }
         tick();
+        return layoutFrame;
       };
     }());
     """
+
+    private static let viewerIcons: [String: Data] = {
+        var icons: [String: Data] = [:]
+        for name in ["favicon", "apple-touch-icon"] {
+            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+               let data = try? Data(contentsOf: url) {
+                icons[name + ".png"] = data
+            }
+        }
+        return icons
+    }()
 
     private static let page = """
     <!doctype html>
@@ -465,15 +519,19 @@ final class LocalScreenServer {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Extnd</title>
+    <link rel="icon" type="image/png" sizes="48x48" href="favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <style>
-    body { margin:0; background:#101817; color:#f0f6f2; font:16px -apple-system,sans-serif; text-align:center }
+    body { margin:0; background:#131419; color:#f0f1f4; font:16px -apple-system,sans-serif; text-align:center }
     img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain }
-    #status { position:relative; display:inline-block; margin:24px 12px; padding:9px 12px; background:#192421; border:1px solid #33433c; border-radius:10px; color:#abbcb3; pointer-events:none }
+    #stream-frame { position:fixed; top:0; left:0; width:100%; height:100%; box-sizing:border-box; border:2px solid #000; pointer-events:none; z-index:1 }
+    #status { z-index:2; position:relative; display:inline-block; margin:24px 12px; padding:9px 12px; background:#22242c; border:1px solid #373a46; border-radius:8px; color:#d1d5df; pointer-events:none }
     #status[hidden] { display:none }
-    #mode { position:absolute; bottom:10px; right:10px; color:#a3edc6; background:#192421; border-radius:8px; padding:10px 12px; font-size:12px; text-decoration:none }
-    #stats { position:absolute; top:8px; right:8px; margin:0; max-width:calc(100% - 32px); padding:3px 6px; border-radius:4px; background:rgba(0,0,0,.44); color:#fff; font-size:11px; line-height:1.3 }
+    #mode { z-index:2; position:absolute; bottom:10px; right:10px; color:#c4d3ff; background:#22242c; border-radius:8px; padding:10px 12px; font-size:12px; text-decoration:none }
+    #stats { z-index:2; position:absolute; top:8px; right:8px; margin:0; max-width:calc(100% - 32px); padding:3px 6px; border-radius:4px; background:rgba(0,0,0,.44); color:#fff; font-size:11px; line-height:1.3 }
     </style>
     <img id="screen" alt="Extended Mac display" hidden>
+    <div id="stream-frame" aria-hidden="true" hidden></div>
     <p id="status" role="status">Waiting for the Mac display…</p>
     <a id="mode" href="?compat=1">Compatibility Mode</a>
     <p id="stats" hidden></p>
@@ -483,10 +541,12 @@ final class LocalScreenServer {
       var screen = document.getElementById('screen');
       var status = document.getElementById('status');
       var mode = document.getElementById('mode');
-      if (window.startStreamStatistics) window.startStreamStatistics();
+      var layoutFrame = window.startStreamStatistics
+        ? window.startStreamStatistics(null, null, function () { return screen; })
+        : function () {};
       if (location.search !== '?compat=1') {
         screen.hidden = false;
-        screen.onload = function () { status.hidden = true; };
+        screen.onload = function () { status.hidden = true; layoutFrame(); };
         screen.onerror = function () {
           status.textContent = 'The stream stopped. Reload the page or try Compatibility Mode.';
           status.hidden = false;
@@ -503,6 +563,7 @@ final class LocalScreenServer {
           frame.alt = screen.alt;
           screen.parentNode.replaceChild(frame, screen);
           screen = frame;
+          layoutFrame();
           status.hidden = true;
           setTimeout(next, 85);
         };

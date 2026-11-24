@@ -11,6 +11,8 @@ Extnd turns an iPad into an extended Mac display over the local network. The Mac
 5. Drag a window onto the **Extnd** display. To change its position, open **System Settings → Displays** on the Mac and arrange it alongside the main display.
 6. Click **Stop Streaming** or quit Extnd to close the virtual display and end the session.
 
+Use **Appearance** in the Mac toolbar to choose System, Light, or Dark. **Black border on iPad** toggles a thin frame around the streamed picture and can be changed during a session.
+
 ## Streaming modes
 
 | Mode | Video output | When to use it |

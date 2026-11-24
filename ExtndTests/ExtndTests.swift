@@ -10,6 +10,12 @@ final class ExtndTests: XCTestCase {
         XCTAssertEqual(Bundle.main.bundleIdentifier, "io.extnd.Extnd")
     }
 
+    func testBundledMacIcon() {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconName") as? String, "AppIcon")
+        XCTAssertNotNil(Bundle.main.url(forResource: "Assets", withExtension: "car"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
+    }
+
     func testMinimumSupportedMacOSVersion() {
         XCTAssertEqual(
             Bundle.main.object(forInfoDictionaryKey: "LSMinimumSystemVersion") as? String,
@@ -19,6 +25,19 @@ final class ExtndTests: XCTestCase {
 }
 
 extension ExtndTests {
+    @MainActor
+    private func verifyViewerIcons(session: URLSession, viewer: URL, html: String) async throws {
+        for name in ["favicon", "apple-touch-icon"] {
+            let file = name + ".png"
+            XCTAssertTrue(html.contains("href=\"" + file + "\""))
+            let (data, response) = try await session.data(from: viewer.appendingPathComponent(file))
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            XCTAssertEqual(response.mimeType, "image/png")
+            let resource = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "png"))
+            XCTAssertEqual(data, try Data(contentsOf: resource))
+        }
+    }
+
     @MainActor
     func testServerRequiresSessionURLAndReturnsLatestFrame() async throws {
         let server = try LocalScreenServer(address: "127.0.0.1")
@@ -42,6 +61,8 @@ extension ExtndTests {
         XCTAssertTrue(html.contains(#"lang="en""#))
         XCTAssertTrue(html.contains("screen.mjpeg"))
         XCTAssertTrue(html.contains("frame.jpg"))
+        XCTAssertTrue(html.contains(#"id="stream-frame""#))
+        try await verifyViewerIcons(session: session, viewer: url, html: html)
 
         let (_, missingFrame) = try await session.data(from: frameURL)
         XCTAssertEqual((missingFrame as? HTTPURLResponse)?.statusCode, 503)
@@ -55,7 +76,14 @@ extension ExtndTests {
 
         let statsURL = url.appendingPathComponent("stats")
         let (hiddenStats, _) = try await session.data(from: statsURL)
-        XCTAssertEqual(try JSONSerialization.jsonObject(with: hiddenStats) as? [String: Bool], ["enabled": false])
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: hiddenStats) as? [String: Bool],
+                       ["enabled": false, "blackBorder": true])
+
+        server.showsBlackBorder = false
+        let (borderOff, _) = try await session.data(from: statsURL)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: borderOff) as? [String: Bool],
+                       ["enabled": false, "blackBorder": false])
+        server.showsBlackBorder = true
 
         server.showsStatistics = true
         let (shownStats, statsResponse) = try await session.data(from: statsURL)
@@ -68,7 +96,8 @@ extension ExtndTests {
 
         server.showsStatistics = false
         let (disabledStats, _) = try await session.data(from: statsURL)
-        XCTAssertEqual(disabledStats, hiddenStats)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: disabledStats) as? [String: Bool],
+                       ["enabled": false, "blackBorder": true])
 
         let wrongURL = url.deletingLastPathComponent().appendingPathComponent("wrong/frame.jpg")
         let (_, denied) = try await session.data(from: wrongURL)
@@ -220,7 +249,9 @@ extension ExtndTests {
         let viewer = try XCTUnwrap(viewerURL)
         let (page, response) = try await session.data(from: viewer)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        XCTAssertTrue(String(decoding: page, as: UTF8.self).contains("Start WebRTC"))
+        let html = String(decoding: page, as: UTF8.self)
+        XCTAssertTrue(html.contains("Start WebRTC"))
+        try await verifyViewerIcons(session: session, viewer: viewer, html: html)
 
         let keyFrame = expectation(description: "Capture server requested a key frame")
         server.onKeyFrameRequest = { keyFrame.fulfill() }

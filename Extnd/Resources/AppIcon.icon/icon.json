@@ -1,0 +1,24 @@
+{
+  "fill": {
+    "solid": "srgb:0.055,0.047,0.105,1.0"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "Artwork.png",
+          "name": "Extnd artwork",
+          "position": {
+            "scale": 1.36,
+            "translation-in-points": [0, 0]
+          }
+        }
+      ],
+      "shadow": { "kind": "none", "opacity": 0 },
+      "specular": false,
+      "translucency": { "enabled": false, "value": 0 }
+    }
+  ],
+  "supported-platforms": { "squares": "shared" }
+}
