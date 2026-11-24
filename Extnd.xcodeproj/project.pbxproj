@@ -1,0 +1,90 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		000000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtndApp.swift; sourceTree = "<group>";};
+		000000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>";};
+		000000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtndTests.swift; sourceTree = "<group>";};
+		000000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>";};
+		000000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = wrapper.application; path = Extnd.app; sourceTree = "BUILT_PRODUCTS_DIR";};
+		000000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = ExtndTests.xctest; sourceTree = "BUILT_PRODUCTS_DIR";};
+		00000000000000000000000A = {isa = PBXGroup; children = (000000000000000000000007, 000000000000000000000008, 000000000000000000000004, 000000000000000000000009); sourceTree = "<group>";};
+		000000000000000000000007 = {isa = PBXGroup; children = (00000000000000000000000B, 00000000000000000000000C); path = Extnd; sourceTree = "<group>";};
+		00000000000000000000000B = {isa = PBXGroup; children = (000000000000000000000001); path = App; sourceTree = "<group>";};
+		00000000000000000000000C = {isa = PBXGroup; children = (00000000000000000000000D); path = Features; sourceTree = "<group>";};
+		00000000000000000000000D = {isa = PBXGroup; children = (000000000000000000000002); path = Home; sourceTree = "<group>";};
+		000000000000000000000008 = {isa = PBXGroup; children = (000000000000000000000003); path = ExtndTests; sourceTree = "<group>";};
+		000000000000000000000009 = {isa = PBXGroup; children = (000000000000000000000005, 000000000000000000000006); sourceTree = "<group>";};
+		00000000000000000000000E = {isa = PBXBuildFile; fileRef = 000000000000000000000001;};
+		00000000000000000000000F = {isa = PBXBuildFile; fileRef = 000000000000000000000002;};
+		000000000000000000000010 = {isa = PBXBuildFile; fileRef = 000000000000000000000003;};
+		000000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000000E, 00000000000000000000000F); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000012 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000013 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000015 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000014; buildPhases = (000000000000000000000011, 000000000000000000000012, 000000000000000000000013); buildRules = (); dependencies = (); name = Extnd; productName = Extnd; productReference = 000000000000000000000005; productType = "com.apple.product-type.application";};
+		000000000000000000000016 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000010); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000017 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		000000000000000000000018 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		00000000000000000000001B = {isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000001A; buildPhases = (000000000000000000000016, 000000000000000000000017, 000000000000000000000018); buildRules = (); dependencies = (000000000000000000000019); name = ExtndTests; productName = ExtndTests; productReference = 000000000000000000000006; productType = "com.apple.product-type.bundle.unit-test";};
+		00000000000000000000001D = {isa = PBXContainerItemProxy; containerPortal = 00000000000000000000001C; proxyType = 1; remoteGlobalIDString = 000000000000000000000015; remoteInfo = Extnd;};
+		000000000000000000000019 = {isa = PBXTargetDependency; target = 000000000000000000000015; targetProxy = 00000000000000000000001D;};
+		00000000000000000000001E = {isa = XCBuildConfiguration; buildSettings = {
+			CLANG_ENABLE_MODULES = "YES";
+			CODE_SIGN_IDENTITY = "-";
+			CODE_SIGN_STYLE = "Manual";
+			ENABLE_TESTABILITY = "YES";
+			MACOSX_DEPLOYMENT_TARGET = "14.0";
+			SDKROOT = "macosx";
+			SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG";
+			SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			SWIFT_VERSION = "6.0";
+		}; name = Debug;};
+		00000000000000000000001F = {isa = XCBuildConfiguration; buildSettings = {
+			CLANG_ENABLE_MODULES = "YES";
+			CODE_SIGN_IDENTITY = "-";
+			CODE_SIGN_STYLE = "Manual";
+			DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			MACOSX_DEPLOYMENT_TARGET = "14.0";
+			SDKROOT = "macosx";
+			SWIFT_COMPILATION_MODE = "wholemodule";
+			SWIFT_VERSION = "6.0";
+		}; name = Release;};
+		000000000000000000000020 = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000001E, 00000000000000000000001F); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		000000000000000000000021 = {isa = XCBuildConfiguration; buildSettings = {
+			CURRENT_PROJECT_VERSION = "1";
+			GENERATE_INFOPLIST_FILE = "YES";
+			INFOPLIST_KEY_CFBundleDevelopmentRegion = "pt-BR";
+			MARKETING_VERSION = "0.1.0";
+			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.Extnd";
+			PRODUCT_NAME = "$(TARGET_NAME)";
+		}; name = Debug;};
+		000000000000000000000022 = {isa = XCBuildConfiguration; buildSettings = {
+			CURRENT_PROJECT_VERSION = "1";
+			GENERATE_INFOPLIST_FILE = "YES";
+			INFOPLIST_KEY_CFBundleDevelopmentRegion = "pt-BR";
+			MARKETING_VERSION = "0.1.0";
+			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.Extnd";
+			PRODUCT_NAME = "$(TARGET_NAME)";
+		}; name = Release;};
+		000000000000000000000014 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000021, 000000000000000000000022); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		000000000000000000000023 = {isa = XCBuildConfiguration; buildSettings = {
+			BUNDLE_LOADER = "$(TEST_HOST)";
+			GENERATE_INFOPLIST_FILE = "YES";
+			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.ExtndTests";
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Extnd.app/Contents/MacOS/Extnd";
+		}; name = Debug;};
+		000000000000000000000024 = {isa = XCBuildConfiguration; buildSettings = {
+			BUNDLE_LOADER = "$(TEST_HOST)";
+			GENERATE_INFOPLIST_FILE = "YES";
+			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.ExtndTests";
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Extnd.app/Contents/MacOS/Extnd";
+		}; name = Release;};
+		00000000000000000000001A = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000023, 000000000000000000000024); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		00000000000000000000001C = {isa = PBXProject; attributes = {TargetAttributes = {00000000000000000000001B = {TestTargetID = 000000000000000000000015;};};}; buildConfigurationList = 000000000000000000000020; compatibilityVersion = "Xcode 14.0"; developmentRegion = "pt-BR"; hasScannedForEncodings = 0; knownRegions = ("pt-BR", Base); mainGroup = 00000000000000000000000A; productRefGroup = 000000000000000000000009; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000015, 00000000000000000000001B);};
+	};
+	rootObject = 00000000000000000000001C;
+}
