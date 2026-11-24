@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extnd</title>
+<style>
+body { margin: 0; background: #101817; color: #f0f6f2; font: 16px -apple-system, sans-serif }
+video { background: #101817 }
+#controls {
+  z-index: 2; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  box-sizing: border-box; width: calc(100% - 40px); max-width: 320px; padding: 24px;
+  background: #192421; border: 1px solid #33433c; border-radius: 16px; box-shadow: 0 12px 36px rgba(0,0,0,.24);
+}
+#controls h1 { margin: 0 0 4px; font-size: 27px; font-weight: 650; letter-spacing: -.8px }
+#controls p { margin: 0 0 16px; color: #abbcb3; font-size: 14px; line-height: 1.45 }
+#controls button {
+  width: 100%; min-height: 44px; border: 0; border-radius: 9px;
+  background: #a3edc6; color: #10291d; font: 600 15px -apple-system, sans-serif;
+}
+#controls button:disabled { background: #263932; color: #abbcb3 }
+#controls #status { margin: 12px 0 0 }
+#controls #status:empty { display: none }
+video { width: 100%; height: 100vh; object-fit: contain; position: absolute; top: 0; left: 0 }
+#pointer { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 1 }
+#stats { z-index: 2; position: absolute; top: 8px; right: 8px; margin: 0; max-width: calc(100% - 32px); padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,.44); color: white; font-size: 11px; line-height: 1.3; text-align: right; white-space: pre-line; pointer-events: none }
+</style>
+</head>
+<body>
+<video id="screen" autoplay muted playsinline></video>
+<canvas id="pointer" width="18" height="24" hidden aria-hidden="true"></canvas>
+<section id="controls">
+  <h1>Extnd</h1>
+  <p>Connect to your Mac display.</p>
+  <button id="start">Start WebRTC</button>
+  <p id="status" role="status"></p>
+</section>
+<p id="stats" hidden></p>
+<script src="stats.js"></script>
+<script>
+var video = document.getElementById('screen');
+video.muted = true;
+var start = document.getElementById('start');
+var message = document.getElementById('status');
+var peer;
+var controls = document.getElementById('controls');
+video.onplaying = function () { controls.hidden = true; };
+if (window.startStreamStatistics) window.startStreamStatistics(function () {
+  return peer && video.readyState >= 2 ? peer : null;
+}, video);
+
+function configureCursor(connection, sessionID) {
+  var pointer = document.getElementById('pointer');
+  var ctx = pointer.getContext('2d');
+  ctx.beginPath();
+  ctx.moveTo(1, 1);
+  ctx.lineTo(16, 16);
+  ctx.lineTo(10, 16);
+  ctx.lineTo(13, 22);
+  ctx.lineTo(10, 23);
+  ctx.lineTo(7, 17);
+  ctx.lineTo(1, 22);
+  ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#fff';
+  ctx.fillStyle = '#161616';
+  ctx.stroke();
+  ctx.fill();
+
+  var bounds;
+  var requested = false;
+  var lastPacket = 0;
+  var previousSequence;
+  var watchdog;
+
+  function updateBounds() {
+    if (!video.videoWidth || !video.videoHeight) return;
+    var rect = video.getBoundingClientRect();
+    var scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+    var width = video.videoWidth * scale;
+    var height = video.videoHeight * scale;
+    bounds = {
+      x: rect.left + (rect.width - width) / 2,
+      y: rect.top + (rect.height - height) / 2,
+      width: width,
+      height: height
+    };
+  }
+
+  function turnOff() {
+    pointer.hidden = true;
+    if (!requested) return;
+    requested = false;
+    post('cursor/' + sessionID() + '/off').catch(function () {});
+  }
+
+  connection.ondatachannel = function (event) {
+    var channel = event.channel;
+    if (channel.label !== 'extnd-cursor') return;
+    channel.binaryType = 'arraybuffer';
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    video.addEventListener('resize', updateBounds);
+    channel.onmessage = function (event) {
+      if (!(event.data instanceof ArrayBuffer) || event.data.byteLength !== 9) return;
+      var data = new DataView(event.data);
+      var sequence = data.getUint32(1);
+      if (previousSequence !== undefined && ((sequence - previousSequence) | 0) <= 0) return;
+      previousSequence = sequence;
+      lastPacket = performance.now();
+      if (!requested && video.readyState >= 2) {
+        requested = true;
+        post('cursor/' + sessionID() + '/on').catch(function () { requested = false; });
+      }
+      if (!bounds) updateBounds();
+      var flags = data.getUint8(0);
+      pointer.hidden = !requested || !bounds || (flags & 3) !== 3;
+      if (!pointer.hidden) {
+        var x = bounds.x + bounds.width * data.getUint16(5) / 65535;
+        var y = bounds.y + bounds.height * data.getUint16(7) / 65535;
+        pointer.style.transform = 'translate3d(' + (x - 1) + 'px,' + (y - 1) + 'px,0)';
+      }
+    };
+    watchdog = setInterval(function () {
+      if (requested && performance.now() - lastPacket > 900) turnOff();
+    }, 300);
+    channel.onclose = function () {
+      clearInterval(watchdog);
+      window.removeEventListener('resize', updateBounds);
+      video.removeEventListener('resize', updateBounds);
+      turnOff();
+    };
+  };
+}
+
+function waitForICE(connection) {
+  return new Promise(function (resolve) {
+    if (connection.iceGatheringState === 'complete') { resolve(); return; }
+    var timer = setTimeout(done, 5000);
+    function done() {
+      clearTimeout(timer);
+      connection.removeEventListener('icegatheringstatechange', changed);
+      resolve();
+    }
+    function changed() { if (connection.iceGatheringState === 'complete') done(); }
+    connection.addEventListener('icegatheringstatechange', changed);
+  });
+}
+
+async function post(path, body) {
+  var response = await fetch(path, { method: 'POST', body: body });
+  if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
+  return response;
+}
+
+start.onclick = async function () {
+  start.disabled = true;
+  message.textContent = 'Connecting…';
+  if (typeof RTCPeerConnection === 'undefined') {
+    message.textContent = 'WebRTC is unavailable in this Safari context.';
+    start.disabled = false;
+    return;
+  }
+  try {
+    peer = new RTCPeerConnection({ iceServers: [] });
+    var viewerID;
+    configureCursor(peer, function () { return viewerID; });
+    peer.ontrack = function (event) {
+      video.srcObject = event.streams[0] || new MediaStream([event.track]);
+      video.play().catch(function () { video.controls = true; });
+    };
+    peer.oniceconnectionstatechange = function () {
+      if ((peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') && video.readyState < 2) {
+        message.textContent = 'Connected. Waiting for H.264 video…';
+      }
+      if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+        controls.hidden = false;
+        message.textContent = 'WebRTC disconnected. Reload this page to retry.';
+      }
+    };
+    var offer = await (await post('offer')).json();
+    viewerID = offer.id;
+    await peer.setRemoteDescription(offer.offer);
+    await peer.setLocalDescription(await peer.createAnswer());
+    await waitForICE(peer);
+    await post('answer/' + offer.id, JSON.stringify(peer.localDescription));
+    if (peer.iceConnectionState === 'new' || peer.iceConnectionState === 'checking') {
+      message.textContent = 'Establishing the local WebRTC connection…';
+    }
+
+  } catch (error) {
+    if (peer) peer.close();
+    message.textContent = error.message;
+    start.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
