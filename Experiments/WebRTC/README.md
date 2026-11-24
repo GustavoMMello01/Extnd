@@ -4,7 +4,7 @@ This experiment compares the standard MJPEG viewer with hardware-capable H.264 e
 
 ## Start the experiment
 
-1. Run Extnd from Xcode. Select the Mac's Wi-Fi address, enable **Teste WebRTC (H.264)**, and click **Iniciar tela estendida**. Allow screen capture when macOS asks. Copy the address shown by Extnd.
+1. Run Extnd from Xcode. Select the Mac's Wi-Fi address, enable **WebRTC Test (H.264)**, and click **Start Extended Display**. Allow screen capture when macOS asks. Copy the address shown by Extnd.
 2. From the repository root, start the relay. Replace the quoted value with the full address you copied:
 
    ```sh

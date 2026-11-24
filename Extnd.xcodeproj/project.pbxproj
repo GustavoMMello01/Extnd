@@ -68,10 +68,10 @@
 		000000000000000000000021 = {isa = XCBuildConfiguration; buildSettings = {
 			CURRENT_PROJECT_VERSION = "1";
 			GENERATE_INFOPLIST_FILE = "YES";
-			INFOPLIST_KEY_CFBundleDevelopmentRegion = "pt-BR";
+			INFOPLIST_KEY_CFBundleDevelopmentRegion = en;
 			CLANG_ENABLE_OBJC_ARC = YES;
 			SWIFT_OBJC_BRIDGING_HEADER = Extnd/Display/VirtualDisplay.h;
-			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "O Extnd transmite a tela estendida para o iPad pela sua rede local.";
+			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Extnd streams your extended Mac display to your iPad over your local network.";
 			MARKETING_VERSION = "0.2.0";
 			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.Extnd";
 			PRODUCT_NAME = "$(TARGET_NAME)";
@@ -79,10 +79,10 @@
 		000000000000000000000022 = {isa = XCBuildConfiguration; buildSettings = {
 			CURRENT_PROJECT_VERSION = "1";
 			GENERATE_INFOPLIST_FILE = "YES";
-			INFOPLIST_KEY_CFBundleDevelopmentRegion = "pt-BR";
+			INFOPLIST_KEY_CFBundleDevelopmentRegion = en;
 			CLANG_ENABLE_OBJC_ARC = YES;
 			SWIFT_OBJC_BRIDGING_HEADER = Extnd/Display/VirtualDisplay.h;
-			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "O Extnd transmite a tela estendida para o iPad pela sua rede local.";
+			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Extnd streams your extended Mac display to your iPad over your local network.";
 			MARKETING_VERSION = "0.2.0";
 			PRODUCT_BUNDLE_IDENTIFIER = "io.extnd.Extnd";
 			PRODUCT_NAME = "$(TARGET_NAME)";
@@ -103,7 +103,7 @@
 			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Extnd.app/Contents/MacOS/Extnd";
 		}; name = Release;};
 		00000000000000000000001A = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000023, 000000000000000000000024); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
-		00000000000000000000001C = {isa = PBXProject; attributes = {TargetAttributes = {00000000000000000000001B = {TestTargetID = 000000000000000000000015;};};}; buildConfigurationList = 000000000000000000000020; compatibilityVersion = "Xcode 14.0"; developmentRegion = "pt-BR"; hasScannedForEncodings = 0; knownRegions = ("pt-BR", Base); mainGroup = 00000000000000000000000A; productRefGroup = 000000000000000000000009; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000015, 00000000000000000000001B);};
+		00000000000000000000001C = {isa = PBXProject; attributes = {TargetAttributes = {00000000000000000000001B = {TestTargetID = 000000000000000000000015;};};}; buildConfigurationList = 000000000000000000000020; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = 00000000000000000000000A; productRefGroup = 000000000000000000000009; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000015, 00000000000000000000001B);};
 	};
 	rootObject = 00000000000000000000001C;
 }

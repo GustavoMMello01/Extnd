@@ -39,6 +39,7 @@ extension ExtndTests {
         let (page, pageResponse) = try await session.data(from: url)
         XCTAssertEqual((pageResponse as? HTTPURLResponse)?.statusCode, 200)
         let html = String(decoding: page, as: UTF8.self)
+        XCTAssertTrue(html.contains(#"lang="en""#))
         XCTAssertTrue(html.contains("screen.mjpeg"))
         XCTAssertTrue(html.contains("frame.jpg"))
 

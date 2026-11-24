@@ -6,10 +6,10 @@ Extnd creates a 1024 × 768 extended display on a Mac and streams it to Safari o
 
 1. Open `Extnd.xcodeproj` in Xcode, select the **Extnd** scheme and **My Mac**, then press **⌘R**.
 2. Connect the Mac and iPad to the same network. If Extnd lists several addresses, choose the one on the iPad's network.
-3. Click **Iniciar tela estendida** (Start extended display). Allow screen recording in **System Settings → Privacy & Security** when prompted, and reopen Extnd if macOS asks. Allow local network access if prompted.
-4. Scan the QR code with the iPad camera or enter the full URL in Safari. The default viewer streams JPEG frames continuously. If Safari cannot display it, tap **Modo compatível** (Compatibility mode).
+3. Click **Start Extended Display**. Allow screen recording in **System Settings → Privacy & Security** when prompted, and reopen Extnd if macOS asks. Allow local network access if prompted.
+4. Scan the QR code with the iPad camera or enter the full URL in Safari. The default viewer streams JPEG frames continuously. If Safari cannot display it, tap **Compatibility Mode**.
 5. Drag a window from the Mac to the **Extnd** display. Use **System Settings → Displays** to arrange it beside the main display. If both displays show the same desktop, check that **Use as** is set to **Extended display**.
-6. Click **Parar transmissão** (Stop streaming) or quit Extnd to end the session.
+6. Click **Stop Streaming** or quit Extnd to end the session.
 
 ## Streaming and compatibility
 

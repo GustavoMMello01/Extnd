@@ -32,9 +32,9 @@ struct HomeView: View {
 
             if let url = session.url {
                 if session.isWebRTC {
-                    Text("Copie o endereço abaixo para iniciar o servidor de teste WebRTC conforme o README.")
+                    Text("Copy this address to start the WebRTC relay. See the experiment README.")
                 } else {
-                    Text("Escaneie o código com a câmera do iPad ou abra o endereço no Safari. Use a mesma rede do Mac.")
+                    Text("Connect your iPad to the same network as your Mac, then scan the QR code or open the address in Safari.")
                 }
                 if !session.isWebRTC, let qrImage = makeQRCode(for: url) {
                     Image(decorative: qrImage, scale: 1)
@@ -43,44 +43,44 @@ struct HomeView: View {
                         .frame(width: 156, height: 156)
                         .padding(12)
                         .background(.white)
-                        .accessibilityLabel("Código QR do endereço da tela estendida")
+                        .accessibilityLabel("QR code for the extended display")
                 }
                 Text(url.absoluteString)
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
-                    .accessibilityLabel("Endereço da tela estendida")
+                    .accessibilityLabel("Extended display address")
                 HStack {
-                    Button("Copiar endereço") {
+                    Button("Copy Address") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     }
-                    Button("Parar transmissão") {
+                    Button("Stop Streaming") {
                         Task { await session.stop() }
                     }
                 }
-                Text("Arraste uma janela para a tela Extnd. Use Ajustes do Sistema → Monitores para posicioná-la.")
+                Text("Drag a window onto the Extnd display. You can arrange it in Displays in System Settings.")
                     .foregroundStyle(.secondary)
             } else {
-                Text("Use seu iPad como tela estendida do Mac pela rede local.")
+                Text("Use your iPad as an extended display for your Mac over your local network.")
                 if session.addresses.isEmpty {
-                    Text("Conecte o Mac à rede Wi-Fi ou Ethernet do iPad para continuar.")
+                    Text("Connect your Mac and iPad to the same network to continue.")
                 } else {
-                    Picker("Endereço do Mac", selection: addressSelection) {
+                    Picker("Mac IP Address", selection: addressSelection) {
                         ForEach(session.addresses, id: \.self) { Text($0).tag(Optional($0)) }
                     }
                     .fixedSize()
                     .disabled(session.isBusy)
                 }
-                Toggle("Teste WebRTC (H.264)", isOn: $webRTC)
+                Toggle("WebRTC Test (H.264)", isOn: $webRTC)
                     .disabled(session.isBusy)
                 HStack {
-                    Button("Iniciar tela estendida") {
+                    Button("Start Extended Display") {
                         guard let address = selectedAddress else { return }
                         Task { await session.start(address: address, webRTC: webRTC) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.isBusy || selectedAddress == nil)
-                    Button("Atualizar rede") { session.refreshAddresses() }
+                    Button("Refresh Network") { session.refreshAddresses() }
                         .disabled(session.isBusy)
                     if session.isBusy { ProgressView().controlSize(.small) }
                 }

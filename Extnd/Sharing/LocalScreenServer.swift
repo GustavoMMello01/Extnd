@@ -83,7 +83,7 @@ final class LocalScreenServer {
                let url = URL(string: "http://\(address):\(port.rawValue)/\(token)/") {
                 onReady?(url)
             } else {
-                onFailure?("O servidor não informou um endereço.")
+                onFailure?("The server did not provide an address.")
             }
         case .waiting(let error), .failed(let error):
             onFailure?(error.localizedDescription)
@@ -233,7 +233,7 @@ final class LocalScreenServer {
 
     private static let page = """
     <!doctype html>
-    <html lang="pt-BR">
+    <html lang="en">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Extnd</title>
@@ -243,9 +243,9 @@ final class LocalScreenServer {
     p { position:relative; margin:32px 12px; pointer-events:none }
     a { position:absolute; bottom:10px; right:10px; color:white; background:#222; padding:8px }
     </style>
-    <img id="screen" alt="Tela estendida do Mac" hidden>
-    <p id="status" role="status">Aguardando a tela do Mac…</p>
-    <a id="mode" href="?compat=1">Modo compatível</a>
+    <img id="screen" alt="Extended Mac display" hidden>
+    <p id="status" role="status">Waiting for the Mac display…</p>
+    <a id="mode" href="?compat=1">Compatibility Mode</a>
     <script>
     (function () {
       var screen = document.getElementById('screen');
@@ -255,14 +255,14 @@ final class LocalScreenServer {
         screen.hidden = false;
         screen.onload = function () { status.hidden = true; };
         screen.onerror = function () {
-          status.textContent = 'A transmissão foi interrompida. Recarregue a página ou tente o modo compatível.';
+          status.textContent = 'The stream stopped. Reload the page or try Compatibility Mode.';
           status.hidden = false;
         };
         screen.src = 'screen.mjpeg';
         return;
       }
       mode.href = './';
-      mode.textContent = 'Modo rápido';
+      mode.textContent = 'Fast Mode';
       function next() {
         var frame = new Image();
         frame.onload = function () {
@@ -274,7 +274,7 @@ final class LocalScreenServer {
           setTimeout(next, 85);
         };
         frame.onerror = function () {
-          status.textContent = 'Aguardando a tela do Mac…';
+          status.textContent = 'Waiting for the Mac display…';
           status.hidden = false;
           setTimeout(next, 750);
         };

@@ -25,11 +25,11 @@ final class SharingSession: ObservableObject {
         message = nil
         guard LocalScreenServer.localAddresses().contains(address) else {
             refreshAddresses()
-            message = "O endereço de rede mudou. Selecione um endereço e tente novamente."
+            message = "The network address changed. Select an address and try again."
             return
         }
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-            message = "Permita a gravação da tela nos Ajustes do Sistema e reabra o Extnd."
+            message = "Allow screen recording in System Settings, then reopen Extnd."
             return
         }
 
@@ -49,7 +49,7 @@ final class SharingSession: ObservableObject {
             } onFailure: { [weak self, weak server] error in
                 Task { @MainActor in
                     guard let self, let server, self.server === server else { return }
-                    await self.stop(message: "Captura interrompida. \(error)")
+                    await self.stop(message: "Screen capture stopped. \(error)")
                 }
             }
             let filter = SCContentFilter(display: source, excludingWindows: [])
@@ -73,7 +73,7 @@ final class SharingSession: ObservableObject {
             server.onFailure = { [weak self, weak server] error in
                 Task { @MainActor in
                     guard let self, let server, self.server === server else { return }
-                    await self.stop(message: "Falha na rede local. \(error)")
+                    await self.stop(message: "Local network connection failed. \(error)")
                 }
             }
             server.start()
@@ -118,9 +118,9 @@ final class SharingSession: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .displayUnavailable:
-                "O macOS não disponibilizou a tela virtual do Extnd."
+                "macOS could not make the Extnd virtual display available."
             case .displayMirrored:
-                "A tela do Extnd apareceu em modo espelhado. Em Monitores, escolha a opção de tela estendida e tente novamente."
+                "The Extnd display is mirrored. In Displays in System Settings, select Extended Display and try again."
             }
         }
     }

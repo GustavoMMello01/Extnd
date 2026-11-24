@@ -113,6 +113,6 @@ final class H264Encoder {
 
     private struct EncodingError: LocalizedError {
         let status: OSStatus
-        var errorDescription: String? { "Falha ao preparar o codificador H.264 (\(status))." }
+        var errorDescription: String? { "Could not initialize the H.264 encoder (\(status))." }
     }
 }
