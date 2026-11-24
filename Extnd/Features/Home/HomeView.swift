@@ -4,7 +4,18 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var session: SharingSession
-    @State private var selectedAddress = ""
+    @State private var preferredAddress: String?
+
+    private var selectedAddress: String? {
+        if let preferredAddress, session.addresses.contains(preferredAddress) {
+            return preferredAddress
+        }
+        return session.addresses.first
+    }
+
+    private var addressSelection: Binding<String?> {
+        Binding(get: { selectedAddress }, set: { preferredAddress = $0 })
+    }
 
     private func makeQRCode(for url: URL) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
@@ -49,19 +60,19 @@ struct HomeView: View {
                 if session.addresses.isEmpty {
                     Text("Conecte o Mac à rede Wi-Fi ou Ethernet do iPad para continuar.")
                 } else {
-                    Picker("Endereço do Mac", selection: $selectedAddress) {
-                        ForEach(session.addresses, id: \.self) { Text($0).tag($0) }
+                    Picker("Endereço do Mac", selection: addressSelection) {
+                        ForEach(session.addresses, id: \.self) { Text($0).tag(Optional($0)) }
                     }
                     .fixedSize()
                     .disabled(session.isBusy)
                 }
                 HStack {
                     Button("Iniciar tela estendida") {
-                        let address = selectedAddress
+                        guard let address = selectedAddress else { return }
                         Task { await session.start(address: address) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(session.isBusy || selectedAddress.isEmpty)
+                    .disabled(session.isBusy || selectedAddress == nil)
                     Button("Atualizar rede") { session.refreshAddresses() }
                         .disabled(session.isBusy)
                     if session.isBusy { ProgressView().controlSize(.small) }
@@ -75,9 +86,6 @@ struct HomeView: View {
         }
         .padding(32)
         .frame(minWidth: 520, minHeight: 300, alignment: .leading)
-        .onChange(of: session.addresses, initial: true) { _, addresses in
-            if !addresses.contains(selectedAddress) { selectedAddress = addresses.first ?? "" }
-        }
         .onAppear { session.refreshAddresses() }
     }
 }
