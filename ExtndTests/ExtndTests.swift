@@ -1,3 +1,5 @@
+import CoreMedia
+import CoreVideo
 import Foundation
 import Network
 import XCTest
@@ -113,5 +115,32 @@ extension ExtndTests {
             }
             data.append(chunk)
         }
+    }
+}
+
+extension ExtndTests {
+    @MainActor
+    func testH264EncoderProducesAnAnnexBKeyFrame() async throws {
+        let ready = expectation(description: "VideoToolbox returned an H.264 key frame")
+        let encoder = try H264Encoder(width: 1024, height: 768) { frame in
+            XCTAssertTrue(frame.isKeyFrame)
+            XCTAssertEqual(frame.bytes.prefix(4), Data([0, 0, 0, 1]))
+            XCTAssertEqual(frame.bytes.dropFirst(4).first.map { $0 & 0x1F }, 7)
+            XCTAssertEqual(frame.timestamp, 90_000)
+            ready.fulfill()
+        }
+        var buffer: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(
+            nil, 1024, 768, kCVPixelFormatType_32BGRA, nil, &buffer
+        ), kCVReturnSuccess)
+        let image = try XCTUnwrap(buffer)
+        CVPixelBufferLockBaseAddress(image, [])
+        if let address = CVPixelBufferGetBaseAddress(image) {
+            memset(address, 0, CVPixelBufferGetDataSize(image))
+        }
+        CVPixelBufferUnlockBaseAddress(image, [])
+        encoder.encode(image, at: CMTime(value: 1, timescale: 1))
+        await fulfillment(of: [ready], timeout: 5)
+        withExtendedLifetime(encoder) {}
     }
 }

@@ -6,12 +6,14 @@ import Network
 final class LocalScreenServer {
     private let listener: NWListener
     private let address: String
+    private let webRTC: Bool
     private let token = UUID().uuidString.lowercased()
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var streams: [ObjectIdentifier: StreamClient] = [:]
     private var latestFrame: Data?
     private var latestPart: Data?
     private var frameNumber = 0
+    private var latestIsKeyFrame = false
 
     private struct StreamClient {
         var sentFrame = 0
@@ -20,8 +22,9 @@ final class LocalScreenServer {
     var onReady: ((URL) -> Void)?
     var onFailure: ((String) -> Void)?
 
-    init(address: String) throws {
+    init(address: String, webRTC: Bool = false) throws {
         self.address = address
+        self.webRTC = webRTC
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
@@ -57,7 +60,17 @@ final class LocalScreenServer {
         var part = Data("Content-Type: image/jpeg\r\nContent-Length: \(frame.count)\r\n\r\n".utf8)
         part.append(frame)
         part.append(Data("\r\n--extnd-frame\r\n".utf8))
+        publish(part: part, isKeyFrame: true)
+    }
+
+    func update(h264 frame: H264Frame) {
+        frameNumber += 1
+        publish(part: frame.wireData, isKeyFrame: frame.isKeyFrame)
+    }
+
+    private func publish(part: Data, isKeyFrame: Bool) {
         latestPart = part
+        latestIsKeyFrame = isKeyFrame
         for id in Array(streams.keys) {
             sendLatestFrame(to: id)
         }
@@ -115,11 +128,13 @@ final class LocalScreenServer {
         let parts = line.split(separator: " ")
         let path = parts.count == 3 && parts[0] == "GET" ? parts[1].split(separator: "?").first : nil
         switch path {
-        case "/\(token)/":
+        case "/\(token)/" where !webRTC:
             send(connection, status: "200 OK", type: "text/html; charset=utf-8", body: Data(Self.page.utf8))
-        case "/\(token)/screen.mjpeg":
+        case "/\(token)/screen.mjpeg" where !webRTC:
             startStream(connection)
-        case "/\(token)/frame.jpg":
+        case "/\(token)/h264" where webRTC && isLocalPeer(connection):
+            startStream(connection)
+        case "/\(token)/frame.jpg" where !webRTC:
             if let latestFrame {
                 send(connection, status: "200 OK", type: "image/jpeg", body: latestFrame)
             } else {
@@ -130,12 +145,19 @@ final class LocalScreenServer {
         }
     }
 
+    private func isLocalPeer(_ connection: NWConnection) -> Bool {
+        guard case .hostPort(let host, _) = connection.endpoint else { return false }
+        return host == NWEndpoint.Host(address)
+    }
+
     private func startStream(_ connection: NWConnection) {
         let id = ObjectIdentifier(connection)
         streams[id] = StreamClient(isSending: true)
+        let contentType = webRTC ? "application/octet-stream" : "multipart/x-mixed-replace; boundary=extnd-frame"
+        let firstBoundary = webRTC ? "" : "--extnd-frame\r\n"
         let headers = Data((
-            "HTTP/1.0 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=extnd-frame\r\n" +
-            "Cache-Control: no-store\r\nConnection: close\r\n\r\n--extnd-frame\r\n"
+            "HTTP/1.0 200 OK\r\nContent-Type: \(contentType)\r\n" +
+            "Cache-Control: no-store\r\nConnection: close\r\n\r\n" + firstBoundary
         ).utf8)
         sendStreamData(headers, to: connection)
 
@@ -148,6 +170,9 @@ final class LocalScreenServer {
     private func sendLatestFrame(to id: ObjectIdentifier) {
         guard let connection = connections[id], let part = latestPart, var client = streams[id],
               !client.isSending, client.sentFrame != frameNumber else { return }
+        if webRTC, !latestIsKeyFrame, client.sentFrame == 0 || client.sentFrame != frameNumber - 1 {
+            return
+        }
         client.sentFrame = frameNumber
         client.isSending = true
         streams[id] = client

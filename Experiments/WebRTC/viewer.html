@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extnd WebRTC test</title>
+<style>
+body { margin: 0; background: #111; color: white; font: 16px -apple-system, sans-serif }
+video { width: 100%; height: 100vh; object-fit: contain; position: absolute; top: 0; left: 0 }
+#controls { position: relative; display: inline-block; margin: 8px; padding: 8px; background: #222 }
+</style>
+</head>
+<body>
+<video id="screen" autoplay muted playsinline></video>
+<div id="controls"><button id="start">Start WebRTC</button> <span id="status" role="status"></span></div>
+<script>
+var video = document.getElementById('screen');
+video.muted = true;
+var start = document.getElementById('start');
+var message = document.getElementById('status');
+var peer;
+var statsTimer;
+
+function waitForICE(connection) {
+  return new Promise(function (resolve) {
+    if (connection.iceGatheringState === 'complete') { resolve(); return; }
+    var timer = setTimeout(done, 5000);
+    function done() {
+      clearTimeout(timer);
+      connection.removeEventListener('icegatheringstatechange', changed);
+      resolve();
+    }
+    function changed() { if (connection.iceGatheringState === 'complete') done(); }
+    connection.addEventListener('icegatheringstatechange', changed);
+  });
+}
+
+async function post(path, body) {
+  var response = await fetch(path, { method: 'POST', body: body });
+  if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
+  return response;
+}
+
+start.onclick = async function () {
+  start.disabled = true;
+  message.textContent = 'Connecting…';
+  if (typeof RTCPeerConnection === 'undefined') {
+    message.textContent = 'WebRTC is unavailable in this Safari context.';
+    start.disabled = false;
+    return;
+  }
+  try {
+    peer = new RTCPeerConnection({ iceServers: [] });
+    peer.ontrack = function (event) {
+      video.srcObject = event.streams[0] || new MediaStream([event.track]);
+      video.play().catch(function () { video.controls = true; });
+    };
+    peer.oniceconnectionstatechange = function () {
+      if ((peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') && video.readyState < 2) {
+        message.textContent = 'Connected. Waiting for H.264 video…';
+      }
+      if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+        clearInterval(statsTimer);
+        message.textContent = 'WebRTC disconnected. Reload this page to retry.';
+      }
+    };
+    var offer = await (await post('offer')).json();
+    await peer.setRemoteDescription(offer.offer);
+    await peer.setLocalDescription(await peer.createAnswer());
+    await waitForICE(peer);
+    await post('answer/' + offer.id, JSON.stringify(peer.localDescription));
+    if (peer.iceConnectionState === 'new' || peer.iceConnectionState === 'checking') {
+      message.textContent = 'Establishing the local WebRTC connection…';
+    }
+    statsTimer = setInterval(async function () {
+      if (!peer || video.readyState < 2) return;
+      var text = 'H.264 · ' + video.videoWidth + ' × ' + video.videoHeight;
+      try {
+        var stats = await peer.getStats();
+        stats.forEach(function (entry) {
+          if (entry.type === 'inbound-rtp' && typeof entry.framesPerSecond === 'number') {
+            text += ' · ' + Math.round(entry.framesPerSecond) + ' fps';
+          }
+        });
+      } catch (error) {}
+      message.textContent = text;
+    }, 1000);
+  } catch (error) {
+    if (peer) peer.close();
+    message.textContent = error.message;
+    start.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

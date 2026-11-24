@@ -34,3 +34,7 @@ The macOS bundle identifier is `io.extnd.Extnd`. Local builds use ad hoc signing
 ```sh
 xcodebuild -project Extnd.xcodeproj -scheme Extnd -destination 'platform=macOS' test
 ```
+
+## Experimental WebRTC mode
+
+See the [H.264 over WebRTC experiment](Experiments/WebRTC/README.md) to compare cursor delay with the default MJPEG viewer on the same iPad.

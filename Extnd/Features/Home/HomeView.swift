@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var session: SharingSession
     @State private var preferredAddress: String?
+    @State private var webRTC = false
 
     private var selectedAddress: String? {
         if let preferredAddress, session.addresses.contains(preferredAddress) {
@@ -30,8 +31,12 @@ struct HomeView: View {
                 .font(.largeTitle.bold())
 
             if let url = session.url {
-                Text("Escaneie o código com a câmera do iPad ou abra o endereço no Safari. Use a mesma rede do Mac.")
-                if let qrImage = makeQRCode(for: url) {
+                if session.isWebRTC {
+                    Text("Copie o endereço abaixo para iniciar o servidor de teste WebRTC conforme o README.")
+                } else {
+                    Text("Escaneie o código com a câmera do iPad ou abra o endereço no Safari. Use a mesma rede do Mac.")
+                }
+                if !session.isWebRTC, let qrImage = makeQRCode(for: url) {
                     Image(decorative: qrImage, scale: 1)
                         .interpolation(.none)
                         .resizable()
@@ -66,10 +71,12 @@ struct HomeView: View {
                     .fixedSize()
                     .disabled(session.isBusy)
                 }
+                Toggle("Teste WebRTC (H.264)", isOn: $webRTC)
+                    .disabled(session.isBusy)
                 HStack {
                     Button("Iniciar tela estendida") {
                         guard let address = selectedAddress else { return }
-                        Task { await session.start(address: address) }
+                        Task { await session.start(address: address, webRTC: webRTC) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.isBusy || selectedAddress == nil)

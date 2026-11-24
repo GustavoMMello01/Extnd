@@ -6,6 +6,7 @@ import ScreenCaptureKit
 @MainActor
 final class SharingSession: ObservableObject {
     @Published private(set) var addresses = LocalScreenServer.localAddresses()
+    @Published private(set) var isWebRTC = false
     @Published private(set) var url: URL?
     @Published private(set) var isBusy = false
     @Published private(set) var message: String?
@@ -19,7 +20,7 @@ final class SharingSession: ObservableObject {
         addresses = LocalScreenServer.localAddresses()
     }
 
-    func start(address: String) async {
+    func start(address: String, webRTC: Bool) async {
         guard !isBusy, server == nil else { return }
         message = nil
         guard LocalScreenServer.localAddresses().contains(address) else {
@@ -39,8 +40,11 @@ final class SharingSession: ObservableObject {
             self.display = display
             let source = try await findDisplay(withID: display.displayID)
             guard CGDisplayIsInMirrorSet(display.displayID) == 0 else { throw SetupError.displayMirrored }
-            let server = try LocalScreenServer(address: address)
-            let output = ScreenCapture { [weak server] frame in
+            let server = try LocalScreenServer(address: address, webRTC: webRTC)
+            let encoder = try webRTC ? H264Encoder(width: 1024, height: 768) { [weak server] frame in
+                Task { @MainActor in server?.update(h264: frame) }
+            } : nil
+            let output = ScreenCapture(encoder: encoder) { [weak server] frame in
                 Task { @MainActor in server?.update(frame: frame) }
             } onFailure: { [weak self, weak server] error in
                 Task { @MainActor in
@@ -61,6 +65,7 @@ final class SharingSession: ObservableObject {
             self.stream = stream
             self.output = output
             self.server = server
+            isWebRTC = webRTC
             server.onReady = { [weak self, weak server] url in
                 guard let self, let server, self.server === server else { return }
                 self.url = url
@@ -87,6 +92,7 @@ final class SharingSession: ObservableObject {
         defer { isBusy = false }
         self.server = nil
         url = nil
+        isWebRTC = false
         server.stop()
         if let stream { try? await stream.stopCapture() }
         stream = nil
