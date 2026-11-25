@@ -16,7 +16,7 @@ An FPS counter measures how many frames are decoded per second. To measure visib
 ## Compare 60 fps resolutions on iPad
 
 1. Start **WebRTC 60 fps (768 × 576)** and open the viewer from the QR code. Drag the same text-heavy window repeatedly and scroll through its contents. Note visible stalls and whether text is easy to read.
-2. Stop streaming, choose **WebRTC 60 fps (640 × 480)**, and open the new viewer address. Repeat on the same Wi-Fi, with the same Mac and iPad placement. Keep **Experimental Fast Cursor**, **Reduce Bitrate Peaks (Experimental)**, and the viewer overlays in the same state for both runs.
+2. Stop streaming and repeat with **WebRTC 60 fps (704 × 528)** and **WebRTC 60 fps (640 × 480)**. Open the new viewer address for each session. Keep the Wi-Fi, device placement, **Experimental Fast Cursor**, **Reduce Bitrate Peaks (Experimental)**, and overlays the same for all three runs.
 3. If you have a 120 or 240 fps camera, film the mouse and iPad together. Repeat at least 20 window drags per mode. Count from the first visible mouse movement to the first movement of the dragged window on the iPad. Compare the median and 95th-percentile delay, along with stalls and text readability.
 
 With **Show Streaming Stats on iPad** enabled in both sessions, record decoded FPS and packet loss if Safari reports them. **Show Timing Details on iPad** also shows sender timings and, when supported, receiver buffer and decode averages. The camera measurement includes the iPad's display delay.
@@ -24,7 +24,7 @@ With **Show Streaming Stats on iPad** enabled in both sessions, record decoded F
 ### Results
 
 - **iPad mini 3 (iOS 12.5.8).** In a manual comparison, 640 × 480 felt smoother than 768 × 576, with softer text. The tester reported playback below 60 fps. Sustained decoded FPS and visible delay still need a timed measurement.
-- **Mac WebKit (macOS 26.6.2).** In a synthetic local session, the viewer decoded the 640 × 480 H.264 stream over the bundled relay at about 60 fps and reported zero packet loss during the sample. This check exercised encoding, transport and playback on the Mac.
+- **Mac WebKit (macOS 26.6.2).** In separate synthetic local sessions, the viewer decoded the 640 × 480 and 704 × 528 H.264 streams over the bundled relay at about 60 fps and reported zero packet loss during the samples. These checks exercised encoding, transport and playback on the Mac.
 
 ## Diagnostics
 

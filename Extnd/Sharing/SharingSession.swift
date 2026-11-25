@@ -8,21 +8,33 @@ enum StreamingMode: String, CaseIterable {
     case mjpeg
     case webRTC30
     case webRTC60
+    case webRTC60Balanced
     case webRTC60Compact
+    case webSocketJPEG
 
     var title: String {
         switch self {
         case .mjpeg: "MJPEG"
         case .webRTC30: "WebRTC 30 fps"
-        case .webRTC60, .webRTC60Compact: "WebRTC 60 fps (\(width) × \(height))"
+        case .webRTC60, .webRTC60Balanced, .webRTC60Compact: "WebRTC 60 fps (\(width) × \(height))"
+        case .webSocketJPEG: "WebSocket JPEG 60 fps (Experimental)"
         }
     }
 
-    var usesWebRTC: Bool { self != .mjpeg }
+    var transport: LocalScreenServer.Transport {
+        switch self {
+        case .mjpeg: .mjpeg
+        case .webRTC30, .webRTC60, .webRTC60Balanced, .webRTC60Compact: .webRTC
+        case .webSocketJPEG: .webSocket
+        }
+    }
+
+    var usesWebRTC: Bool { transport == .webRTC }
     private var resolution: (width: Int, height: Int) {
         switch self {
-        case .mjpeg, .webRTC30: (1024, 768)
+        case .mjpeg, .webRTC30, .webSocketJPEG: (1024, 768)
         case .webRTC60: (768, 576)
+        case .webRTC60Balanced: (704, 528)
         case .webRTC60Compact: (640, 480)
         }
     }
@@ -33,7 +45,7 @@ enum StreamingMode: String, CaseIterable {
     var framesPerSecond: Int32 {
         switch self {
         case .mjpeg, .webRTC30: 30
-        case .webRTC60, .webRTC60Compact: 60
+        case .webRTC60, .webRTC60Balanced, .webRTC60Compact, .webSocketJPEG: 60
         }
     }
 
@@ -113,7 +125,7 @@ final class SharingSession: ObservableObject {
             self.display = display
             let source = try await findDisplay(withID: display.displayID)
             guard CGDisplayIsInMirrorSet(display.displayID) == 0 else { throw SetupError.displayMirrored }
-            let server = try LocalScreenServer(address: address, webRTC: mode.usesWebRTC)
+            let server = try LocalScreenServer(address: address, transport: mode.transport)
             let encoder = try mode.usesWebRTC ? H264Encoder(
                 width: Int32(mode.width), height: Int32(mode.height), framesPerSecond: mode.framesPerSecond,
                 limitBitratePeaks: limitBitratePeaks
