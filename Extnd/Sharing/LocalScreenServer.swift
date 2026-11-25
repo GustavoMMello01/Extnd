@@ -4,9 +4,17 @@ import Network
 
 @MainActor
 final class LocalScreenServer {
+    enum Transport {
+        case mjpeg
+        case webRTC
+        case webSocket
+    }
+
     private let listener: NWListener
     private let address: String
-    private let webRTC: Bool
+    private let transport: Transport
+    private var webRTC: Bool { transport == .webRTC }
+    private var webSocket: JPEGWebSocketServer?
     private let token = UUID().uuidString.lowercased()
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var streams: [ObjectIdentifier: StreamClient] = [:]
@@ -54,9 +62,9 @@ final class LocalScreenServer {
     var onKeyFrameRequest: (() -> Void)?
     var onFailure: ((String) -> Void)?
 
-    init(address: String, webRTC: Bool = false) throws {
+    init(address: String, transport: Transport = .mjpeg) throws {
         self.address = address
-        self.webRTC = webRTC
+        self.transport = transport
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
@@ -79,6 +87,8 @@ final class LocalScreenServer {
 
     func stop() {
         listener.cancel()
+        webSocket?.stop()
+        webSocket = nil
         for connection in connections.values { connection.cancel() }
         connections.removeAll()
         streams.removeAll()
@@ -90,6 +100,10 @@ final class LocalScreenServer {
         latestFrame = frame
         frameNumber += 1
         encodedBytes += frame.count
+        if transport == .webSocket {
+            webSocket?.update(frame)
+            return
+        }
         var part = Data("Content-Type: image/jpeg\r\nContent-Length: \(frame.count)\r\n\r\n".utf8)
         part.append(frame)
         part.append(Data("\r\n--extnd-frame\r\n".utf8))
@@ -117,16 +131,37 @@ final class LocalScreenServer {
     private func handle(_ state: NWListener.State) {
         switch state {
         case .ready:
-            if let port = listener.port,
-               let url = URL(string: "http://\(address):\(port.rawValue)/\(token)/") {
-                onReady?(url)
-            } else {
+            guard let port = listener.port,
+                  let url = URL(string: "http://\(address):\(port.rawValue)/\(token)/") else {
                 onFailure?("The server did not provide an address.")
+                return
+            }
+            if transport == .webSocket {
+                startWebSocket(origin: "http://\(address):\(port.rawValue)", viewer: url)
+            } else {
+                onReady?(url)
             }
         case .waiting(let error), .failed(let error):
             onFailure?(error.localizedDescription)
         default:
             break
+        }
+    }
+
+    private func startWebSocket(origin: String, viewer: URL) {
+        do {
+            let socket = try JPEGWebSocketServer(address: address, origin: origin, token: token)
+            webSocket = socket
+            if let latestFrame { socket.update(latestFrame) }
+            socket.start { [weak self, weak socket] in
+                guard let self, let socket, self.webSocket === socket else { return }
+                self.onReady?(viewer)
+            } onFailure: { [weak self, weak socket] error in
+                guard let self, let socket, self.webSocket === socket else { return }
+                self.onFailure?("Could not start the WebSocket viewer. \(error)")
+            }
+        } catch {
+            onFailure?("Could not start the WebSocket viewer. \(error.localizedDescription)")
         }
     }
 
@@ -177,8 +212,9 @@ final class LocalScreenServer {
         }
         switch path {
         case "/\(token)/" where !webRTC:
-            send(connection, status: "200 OK", type: "text/html; charset=utf-8", body: Data(Self.page.utf8))
-        case "/\(token)/screen.mjpeg" where !webRTC:
+            let page = Self.page(webSocketPort: webSocket?.port)
+            send(connection, status: "200 OK", type: "text/html; charset=utf-8", body: Data(page.utf8))
+        case "/\(token)/screen.mjpeg" where transport == .mjpeg:
             startStream(connection)
         case "/\(token)/h264" where webRTC && isLocalPeer(connection):
             startStream(connection)
@@ -242,7 +278,7 @@ final class LocalScreenServer {
         let statistics = Statistics(
             enabled: showsStatistics,
             blackBorder: showsBlackBorder,
-            codec: showsStatistics ? (webRTC ? "H.264" : "MJPEG") : nil,
+            codec: showsStatistics ? streamLabel : nil,
             frames: showsStatistics ? frameNumber : nil,
             encodedBytes: showsStatistics ? encodedBytes : nil,
             seconds: showsStatistics ? ProcessInfo.processInfo.systemUptime - startedAt : nil,
@@ -253,6 +289,14 @@ final class LocalScreenServer {
             return
         }
         send(connection, status: "200 OK", type: "application/json", body: body)
+    }
+
+    private var streamLabel: String {
+        switch transport {
+        case .mjpeg: "MJPEG"
+        case .webRTC: "H.264"
+        case .webSocket: "JPEG / WebSocket"
+        }
     }
 
     private func isLocalPeer(_ connection: NWConnection) -> Bool {
@@ -360,7 +404,7 @@ final class LocalScreenServer {
         return 1000 * (sum - previousSum) / (count - previousCount);
       }
 
-      window.startStreamStatistics = function (getPeer, video, getPicture) {
+      window.startStreamStatistics = function (getPeer, video, getPicture, getImageStats) {
         var panel = document.getElementById('stats');
         var frame = document.getElementById('stream-frame');
         var pictureRatio = 0;
@@ -421,6 +465,10 @@ final class LocalScreenServer {
 
           var details = [source.codec];
           if (video && video.videoWidth) details.push(video.videoWidth + ' × ' + video.videoHeight);
+          if (getImageStats && getPicture().naturalWidth) {
+            var image = getPicture();
+            details.push(image.naturalWidth + ' × ' + image.naturalHeight);
+          }
           if (fps !== null) details.push(Math.round(fps) + ' fps decoded');
           else if (sourceFPS !== null) details.push(Math.round(sourceFPS) + ' fps encoded');
           if (receiveBytes !== null) details.push((receiveBytes * 8 / 1000000).toFixed(2) + ' Mb/s received');
@@ -490,7 +538,7 @@ final class LocalScreenServer {
                   if (sampleNumber === sample) render(source, undefined, time);
                 });
               } else {
-                render(source, undefined, time);
+                render(source, getImageStats ? getImageStats() : undefined, time);
               }
             }
           };
@@ -513,7 +561,8 @@ final class LocalScreenServer {
         return icons
     }()
 
-    private static let page = """
+    private static func page(webSocketPort: NWEndpoint.Port?) -> String {
+        """
     <!doctype html>
     <html lang="en">
     <meta charset="utf-8">
@@ -530,7 +579,7 @@ final class LocalScreenServer {
     #mode { z-index:2; position:absolute; bottom:10px; right:10px; color:#c4d3ff; background:#22242c; border-radius:8px; padding:10px 12px; font-size:12px; text-decoration:none }
     #stats { z-index:2; position:absolute; top:8px; right:8px; margin:0; max-width:calc(100% - 32px); padding:3px 6px; border-radius:4px; background:rgba(0,0,0,.44); color:#fff; font-size:11px; line-height:1.3 }
     </style>
-    <img id="screen" alt="Extended Mac display" hidden>
+    <img id="screen" data-websocket-port="\(webSocketPort.map { String($0.rawValue) } ?? "")" alt="Extended Mac display" hidden>
     <div id="stream-frame" aria-hidden="true" hidden></div>
     <p id="status" role="status">Waiting for the Mac display…</p>
     <a id="mode" href="?compat=1">Compatibility Mode</a>
@@ -541,10 +590,45 @@ final class LocalScreenServer {
       var screen = document.getElementById('screen');
       var status = document.getElementById('status');
       var mode = document.getElementById('mode');
+      var socketPort = screen.getAttribute('data-websocket-port');
+      var compatibility = location.search === '?compat=1';
+      var imageStats = { framesDecoded: 0, bytesReceived: 0 };
       var layoutFrame = window.startStreamStatistics
-        ? window.startStreamStatistics(null, null, function () { return screen; })
+        ? window.startStreamStatistics(null, null, function () { return screen; },
+            socketPort && !compatibility ? function () { return imageStats; } : null)
         : function () {};
-      if (location.search !== '?compat=1') {
+      if (socketPort && !compatibility) {
+        var token = location.pathname.split('/')[1];
+        var socket = new WebSocket('ws://' + location.hostname + ':' + socketPort + '/', token);
+        socket.binaryType = 'arraybuffer';
+        function requestFrame() {
+          if (socket.readyState === WebSocket.OPEN) socket.send('next');
+        }
+        socket.onopen = requestFrame;
+        socket.onmessage = function (message) {
+          imageStats.bytesReceived += message.data.byteLength;
+          var frameURL = URL.createObjectURL(new Blob([message.data], { type: 'image/jpeg' }));
+          screen.onload = function () {
+            URL.revokeObjectURL(frameURL);
+            imageStats.framesDecoded++;
+            screen.hidden = false;
+            status.hidden = true;
+            layoutFrame();
+            requestFrame();
+          };
+          screen.onerror = function () {
+            URL.revokeObjectURL(frameURL);
+            socket.close();
+          };
+          screen.src = frameURL;
+        };
+        socket.onclose = function () {
+          status.textContent = 'The WebSocket stream stopped. Reload the page or try Compatibility Mode.';
+          status.hidden = false;
+        };
+        return;
+      }
+      if (!compatibility) {
         screen.hidden = false;
         screen.onload = function () { status.hidden = true; layoutFrame(); };
         screen.onerror = function () {
@@ -579,4 +663,5 @@ final class LocalScreenServer {
     </script>
     </html>
     """
+    }
 }
