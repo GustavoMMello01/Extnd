@@ -177,6 +177,17 @@ extension ExtndTests {
     }
 
     @MainActor
+    func testCompact60FPSModeConfiguresCaptureAndProducesAKeyFrame() async throws {
+        let mode = StreamingMode.webRTC60Compact
+        let configuration = mode.captureConfiguration(showsCursor: true)
+        XCTAssertTrue(mode.usesWebRTC)
+        XCTAssertEqual(configuration.width, 640)
+        XCTAssertEqual(configuration.height, 480)
+        XCTAssertEqual(configuration.minimumFrameInterval, CMTime(value: 1, timescale: 60))
+        try await verifyH264KeyFrame(mode: mode)
+    }
+
+    @MainActor
     func testH264PeakLimitKeepsTheEncoderUsable() async throws {
         try await verifyH264KeyFrame(mode: .webRTC60, limitBitratePeaks: true)
     }

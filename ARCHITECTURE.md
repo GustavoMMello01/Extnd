@@ -49,9 +49,10 @@ flowchart LR
 | --- | --- | --- | --- |
 | MJPEG | 1024 × 768 | 1024 × 768, up to 30 fps | Multipart JPEG over a persistent HTTP/TCP connection. Compatibility Mode fetches one JPEG per request. |
 | WebRTC 30 fps | 1024 × 768 | 1024 × 768, target 30 fps | H.264 over WebRTC |
-| WebRTC 60 fps | 1024 × 768 | 768 × 576, target 60 fps | H.264 over WebRTC |
+| WebRTC 60 fps (768 × 576) | 1024 × 768 | 768 × 576, target 60 fps | H.264 over WebRTC |
+| WebRTC 60 fps (640 × 480) | 1024 × 768 | 640 × 480, target 60 fps | H.264 over WebRTC |
 
-The WebRTC modes keep the desktop size fixed and change the encoded output. The smaller 60 fps picture reduces the decoder's pixel workload and prioritizes motion. The standard encoder targets 2.0 Mb/s. **Reduce Bitrate Peaks (Experimental)** requests a 1.6 Mb/s average and a 300,000-byte limit over one second (2.4 Mb/s). VideoToolbox reports whether it accepts that setting. A rejected setting falls back to the standard average. Output is measured independently because an accepted setting may still exceed the requested limit.
+The WebRTC modes keep the desktop size fixed and change the encoded output. The 640 × 480 mode has about 31% fewer pixels per frame than the 768 × 576 mode. Both request the same 60 fps target and encoder settings so the iPad trial can isolate the resolution change. The standard encoder targets 2.0 Mb/s. **Reduce Bitrate Peaks (Experimental)** requests a 1.6 Mb/s average and a 300,000-byte limit over one second (2.4 Mb/s). VideoToolbox reports whether it accepts that setting. A rejected setting falls back to the standard average. Output is measured independently because an accepted setting may still exceed the requested limit.
 
 The App-to-relay TCP feed carries one access unit at a time. An eight-byte big-endian header contains a 32-bit payload length and a 32-bit timestamp at 90 kHz. The H.264 payload uses Annex B start codes, with SPS and PPS on keyframes. Pion packetizes the stream using a 1,150-byte RTP MTU setting and negotiates H.264 with packetization mode 1 and a `42e01f` profile-level ID.
 
@@ -76,19 +77,30 @@ Extnd captures the selected virtual display after macOS grants screen-recording 
 | Check | Result |
 | --- | --- |
 | macOS build and signing | Xcode built the app and embedded relay for arm64 and x86_64. The local app bundle passed signature verification. |
-| XCTest | 10 passing tests cover app configuration, the MJPEG stream and controls, VideoToolbox keyframes at 30 and 60 fps, the bitrate profile, relay startup, cursor packet format, and timing summaries. |
+| XCTest | All 12 tests passed. They cover app configuration, the MJPEG stream and controls, VideoToolbox keyframes in each WebRTC mode, capture settings for 640 × 480 at 60 fps, the bitrate profile, relay startup, cursor packet format, and timing summaries. |
 | Go WebRTC integration | The race-enabled test passed H.264 RTP delivery over UDP, RTCP picture-loss feedback, and unordered cursor-message delivery. A separate test verified relay timing exposure. |
-| WebKit on the Mac | The managed relay displayed synthetic H.264 at 768 × 576 and approximately 60 fps. The setup and active-session layouts were reviewed in light and dark appearances, and the displayed QR code was decoded in a local test. |
-| iPad mini 3 | A manual trial on iOS 12.5.8 confirmed that the WebRTC display streamed and felt more responsive than the earlier MJPEG viewer. Sustained 60 fps and end-to-end cursor and window latency remain to be measured on the device. |
+| WebKit on the Mac | The managed relay displayed synthetic H.264 at 768 × 576 and 640 × 480 in separate tests at approximately 60 fps. The setup and active-session layouts were reviewed in light and dark appearances, and the displayed QR code was decoded in a local test. |
+| iPad mini 3 | On iOS 12.5.8, WebRTC felt more responsive than MJPEG. A later manual comparison reported smoother motion at 640 × 480 than at 768 × 576, with reduced sharpness and playback below the 60 fps target. Sustained FPS and end-to-end latency remain to be measured. |
 
 The [benchmark tables in the README](README.md#benchmark-results) summarize the Mac results. The [WebRTC testing guide](Experiments/WebRTC/README.md) records the workloads, interpretation and checks for the target iPad.
+
+## Related implementations
+
+| Project | Approach and relevance to Extnd |
+| --- | --- |
+| Deskreen | Uses WebRTC to stream a desktop to a browser. It is the closest comparison for keeping the iPad viewer accessible without a native app. [Deskreen CE](https://github.com/pavlobu/deskreen) |
+| Weylus | Sends H.264 inside fragmented MP4 over WebSocket and plays it with Media Source Extensions. WebKit added that API on iPad with Safari 13, which puts this playback path outside the target iPad's iOS 12 environment. [Weylus architecture](https://github.com/H-M-H/Weylus/blob/master/Readme.md#how-does-this-work) · [WebKit on Safari 13](https://webkit.org/blog/9674/new-webkit-features-in-safari-13/) |
+| Sunshine and Moonlight | Sunshine supports ScreenCaptureKit and VideoToolbox on macOS. Moonlight's iOS renderer uses AVSampleBufferDisplayLayer and can retain one queued frame to smooth timing variation. The App Store lists iOS 12 support, so this pair could provide a native benchmark on the target hardware if installation and playback succeed. [Sunshine capabilities](https://docs.lizardbyte.dev/projects/sunshine/latest/) · [Moonlight renderer](https://github.com/moonlight-stream/moonlight-ios/blob/master/Limelight/Stream/VideoDecoderRenderer.m) · [Moonlight on the App Store](https://apps.apple.com/us/app/moonlight-game-streaming/id1000551566?platform=ipad) |
+| MegaDisplay | Streams H.264 from Linux to an Android tablet over USB. Its choice of a wired link suggests a way to isolate Wi-Fi variability, though its implementation targets different platforms. [MegaDisplay](https://github.com/linuxnoodle/megadisplay) |
 
 ## Latency roadmap
 
 1. **Establish the physical baseline.** Film the mouse and iPad together at 120 or 240 fps. Record at least 20 runs per condition for pointer movement and window dragging, with the same display profile, network and workload. Compare median and p95 motion-to-display delay, freezes and text clarity.
 2. **Qualify the fast cursor.** Compare the overlay on and off while keeping the video profile fixed. A gain around one 60 Hz refresh (17 ms) is a useful target. Check alignment, visibility at display edges, window dragging, and fallback on the device. The video path determines how quickly the dragged window follows the pointer.
 3. **Qualify the bitrate profile.** Change only **Reduce Bitrate Peaks (Experimental)**. Compare window-motion p95, receiver loss or buffering when available, and text readability. Keep the profile optional until the iPad trial supports a default change.
-4. **Tune the measured bottleneck.** If capture or encoding dominates, consider rejecting old input frames before encoding or testing a smaller 60 fps output. If the network dominates, measure encoder bursts and adapt bitrate conservatively. If the receiver dominates, evaluate an iPad client with control over decoding and presentation before changing the transport or codec.
+4. **Find a resolution and frame rate for the iPad mini 3.** Compare 704 × 528 at 60 fps with both current 60 fps modes to test an intermediate level of sharpness. Test 768 × 576 at 30 fps as a separate comparison that changes only the frame-rate target. Use the same cursor, bitrate and network settings. Compare visible window-motion delay, stalls and text clarity.
+5. **Tune the measured bottleneck.** If capture or encoding dominates, consider rejecting old input frames before encoding. If loss and buffering rise during motion, test the existing bitrate peak limit at a fixed resolution. Evaluate adaptive resolution only after reproducible fixed-profile results, including whether Safari on iOS 12 can handle a resolution change within a session.
+6. **Benchmark native playback before building an iPad app.** If the App Store client runs on the iPad, compare Moonlight and Safari at the same resolution and frame-rate target on the same network. Any gap reflects differences across the two streaming pipelines. A controlled prototype could then hold more of the sender path fixed. Xcode 27.2 lists iOS and iPadOS 15 as its minimum deployment target, so a custom client for iOS 12 needs a separately verified build and installation path. [Apple's Xcode requirements](https://developer.apple.com/xcode/system-requirements/)
 
 ## References
 

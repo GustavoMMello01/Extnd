@@ -6,12 +6,25 @@ See the [Extnd README](../../README.md) for setup and benchmark results and the 
 
 ## Compare the modes on iPad
 
-1. Open Extnd, choose **WebRTC 60 fps**, and click **Start Extended Display**.
+1. Open Extnd, choose **WebRTC 60 fps (768 × 576)**, and click **Start Extended Display**.
 2. Scan the QR code with the iPad, open the link in Safari, and tap **Start WebRTC**.
 3. On the Mac, enable **Show Streaming Stats on iPad**. Move the pointer and drag a window on the Extnd display. Note the decoded FPS and packet loss if Safari reports them.
 4. End the session and repeat with **WebRTC 30 fps** and **MJPEG**. Use the same network, device positions, and motions.
 
 An FPS counter measures how many frames are decoded per second. To measure visible delay, film the physical mouse and the iPad in the same high-frame-rate recording. Count the frames from the start of the motion to the first visible cursor movement, then repeat several times for each mode.
+
+## Compare 60 fps resolutions on iPad
+
+1. Start **WebRTC 60 fps (768 × 576)** and open the viewer from the QR code. Drag the same text-heavy window repeatedly and scroll through its contents. Note visible stalls and whether text is easy to read.
+2. Stop streaming, choose **WebRTC 60 fps (640 × 480)**, and open the new viewer address. Repeat on the same Wi-Fi, with the same Mac and iPad placement. Keep **Experimental Fast Cursor**, **Reduce Bitrate Peaks (Experimental)**, and the viewer overlays in the same state for both runs.
+3. If you have a 120 or 240 fps camera, film the mouse and iPad together. Repeat at least 20 window drags per mode. Count from the first visible mouse movement to the first movement of the dragged window on the iPad. Compare the median and 95th-percentile delay, along with stalls and text readability.
+
+With **Show Streaming Stats on iPad** enabled in both sessions, record decoded FPS and packet loss if Safari reports them. **Show Timing Details on iPad** also shows sender timings and, when supported, receiver buffer and decode averages. The camera measurement includes the iPad's display delay.
+
+### Results
+
+- **iPad mini 3 (iOS 12.5.8).** In a manual comparison, 640 × 480 felt smoother than 768 × 576, with softer text. The tester reported playback below 60 fps. Sustained decoded FPS and visible delay still need a timed measurement.
+- **Mac WebKit (macOS 26.6.2).** In a synthetic local session, the viewer decoded the 640 × 480 H.264 stream over the bundled relay at about 60 fps and reported zero packet loss during the sample. This check exercised encoding, transport and playback on the Mac.
 
 ## Diagnostics
 
@@ -68,4 +81,4 @@ A short-window limit tested on its own reduced the single largest burst while in
 
 ### Validate on iPad
 
-Compare two **WebRTC 60 fps** sessions on the same Wi-Fi and with the same cursor setting. Change only **Reduce Bitrate Peaks (Experimental)**. Repeat at least 20 drags of the same text-heavy window in each session, including fast scrolling. Compare the median and p95 visible window response using a high-frame-rate camera, and check text clarity and stalls. Keep the profile optional until the iPad results justify a default change.
+Compare two **WebRTC 60 fps (768 × 576)** sessions on the same Wi-Fi and with the same cursor setting. Change only **Reduce Bitrate Peaks (Experimental)**. Repeat at least 20 drags of the same text-heavy window in each session, including fast scrolling. Compare the median and p95 visible window response using a high-frame-rate camera, and check text clarity and stalls. Keep the profile optional until the iPad results justify a default change.

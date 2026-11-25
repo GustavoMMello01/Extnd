@@ -8,19 +8,34 @@ enum StreamingMode: String, CaseIterable {
     case mjpeg
     case webRTC30
     case webRTC60
+    case webRTC60Compact
 
     var title: String {
         switch self {
         case .mjpeg: "MJPEG"
         case .webRTC30: "WebRTC 30 fps"
-        case .webRTC60: "WebRTC 60 fps"
+        case .webRTC60, .webRTC60Compact: "WebRTC 60 fps (\(width) × \(height))"
         }
     }
 
     var usesWebRTC: Bool { self != .mjpeg }
-    var width: Int { self == .webRTC60 ? 768 : 1024 }
-    var height: Int { self == .webRTC60 ? 576 : 768 }
-    var framesPerSecond: Int32 { self == .webRTC60 ? 60 : 30 }
+    private var resolution: (width: Int, height: Int) {
+        switch self {
+        case .mjpeg, .webRTC30: (1024, 768)
+        case .webRTC60: (768, 576)
+        case .webRTC60Compact: (640, 480)
+        }
+    }
+
+    var width: Int { resolution.width }
+    var height: Int { resolution.height }
+
+    var framesPerSecond: Int32 {
+        switch self {
+        case .mjpeg, .webRTC30: 30
+        case .webRTC60, .webRTC60Compact: 60
+        }
+    }
 
     func captureConfiguration(showsCursor: Bool) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()

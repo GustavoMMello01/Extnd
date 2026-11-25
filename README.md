@@ -17,24 +17,27 @@ Use **Appearance** in the Mac toolbar to choose System, Light, or Dark. **Black 
 
 | Mode | Video output | When to use it |
 | --- | --- | --- |
-| **WebRTC 60 fps** | H.264 at 768 × 576, targeting 60 fps | Smoother cursor movement and window dragging |
+| **WebRTC 60 fps (768 × 576)** | H.264 at 768 × 576, targeting 60 fps | Smoother cursor movement and window dragging |
+| **WebRTC 60 fps (640 × 480)** | H.264 at 640 × 480, targeting 60 fps | Smoother motion observed on iPad mini 3, with softer text |
 | **WebRTC 30 fps** | H.264 at 1024 × 768, targeting 30 fps | Sharper text at the desktop's full resolution |
 | **MJPEG** | JPEG frames at 1024 × 768, targeting up to 30 fps | Fallback if WebRTC does not connect |
 
 The virtual desktop stays at 1024 × 768 in all modes. The MJPEG viewer also offers **Compatibility Mode**, which fetches JPEGs one at a time when the continuous stream cannot play.
 
+Follow the [60 fps resolution comparison](Experiments/WebRTC/README.md#compare-60-fps-resolutions-on-ipad) to test whether the 640 × 480 mode improves window motion and keeps text readable on your iPad.
+
 During a session, toggle **Show Streaming Stats on iPad** on the Mac to show or hide the overlay. WebRTC reports decoded FPS, video receive rate, resolution, and packet loss when Safari exposes them. The overlay labels source encoding rates when receiver statistics are unavailable. These figures describe the Extnd stream. Use the [camera-based validation plan](Experiments/WebRTC/README.md#validation-plan) to measure cursor-to-display delay.
 
 ## How Extnd works
 
-[Architecture and technical specifications](ARCHITECTURE.md) covers the session lifecycle, wire formats, dependencies, test coverage, and latency roadmap.
+[Architecture and technical specifications](ARCHITECTURE.md) covers the session lifecycle, wire formats, dependencies, and test coverage. It also compares [related implementations](ARCHITECTURE.md#related-implementations) and describes the next latency experiments.
 
 | Technology | Role |
 | --- | --- |
 | **Swift 6, SwiftUI, and AppKit** | Run the Mac app and provide network selection, streaming controls, and session lifecycle. Core Image generates the viewer QR code. |
 | **CoreGraphics virtual display** | Creates the separate desktop that macOS treats as an extended monitor. The private API lives in `Extnd/Display` and may need changes after macOS updates. |
 | **ScreenCaptureKit** | Captures the Extnd display and the Mac cursor. In WebRTC modes, it supplies bi-planar YCbCr frames directly to the encoder. |
-| **VideoToolbox and H.264** | Encode video in real time without frame reordering. The 60 fps profile requests zero queued frames where supported and provides more frequent keyframes. |
+| **VideoToolbox and H.264** | Encode video in real time without frame reordering. The 60 fps profiles request zero queued frames where supported and provide more frequent keyframes. |
 | **Core Image, MJPEG, and Network.framework** | Encode independent JPEGs and serve them to Safari over one persistent HTTP/TCP connection. The server skips older JPEGs when a viewer is busy. |
 | **Go and Pion WebRTC** | Run the relay bundled inside the Mac app. The relay takes encoded H.264 from the local capture server, handles WebRTC signaling, sends encrypted video over UDP, and requests a keyframe when the viewer reports picture loss. |
 | **Safari and JavaScript** | Play the stream in Safari and render the optional statistics overlay. |
@@ -46,15 +49,20 @@ The viewer uses a fresh random URL per session and HTTP for page loading and sig
 1. **JPEG polling.** Safari requested a complete JPEG for each update. This proved the display and viewer worked, but each request added overhead.
 2. **Continuous MJPEG.** One persistent HTTP connection eliminated repeated requests in the standard viewer. It still encoded each frame as a full JPEG.
 3. **H.264 over WebRTC.** VideoToolbox encoded the display as video, and Pion switched media delivery to WebRTC over UDP. The iPad mini 3 on iOS 12.5.8 played the stream in a manual trial and felt more responsive than the earlier viewer.
-4. **Integrated WebRTC.** Xcode now bundles the relay, and the app launches it and displays the viewer QR code. The 60 fps mode trades some stream resolution for smoother motion, and picture-loss feedback helps the decoder recover without waiting for the next scheduled keyframe.
+4. **Integrated WebRTC.** Xcode now bundles the relay, and the app launches it and displays the viewer QR code. Picture-loss feedback helps the decoder recover without waiting for the next scheduled keyframe.
+5. **Lower-resolution 60 fps option.** The 640 × 480 profile reduces the number of pixels per frame by about 31% compared with 768 × 576. Both target 60 fps.
 
 ## Benchmark results
 
-These are local Mac measurements from macOS 26.6.2. A manual iPad mini 3 trial on iOS 12.5.8 confirmed WebRTC playback and reported better responsiveness than MJPEG. The tablet still needs a controlled measurement of sustained FPS and motion-to-display delay.
+### 60 fps resolution comparison
+
+On an iPad mini 3 running iOS 12.5.8, the tester reported smoother motion at 640 × 480 than at 768 × 576, with lower image sharpness. The tester also reported playback below the 60 fps target. Sustained decoded FPS and motion-to-display delay still need to be measured on the iPad.
+
+In a separate synthetic test on macOS 26.6.2, WebKit decoded the 640 × 480 stream over the bundled relay at about 60 fps, with zero packet loss reported during the sampled interval.
 
 ### Fast cursor
 
-The Mac's WebKit viewer observed 24 matched synthetic state changes per profile over the same relay. The lead is how much earlier the cursor overlay updated compared with its matching video change.
+On macOS 26.6.2, the Mac's WebKit viewer observed 24 matched synthetic state changes per profile over the same relay. The lead is how much earlier the cursor overlay updated compared with its matching video change.
 
 | WebRTC profile | Cursor ahead | Median lead | Observed range |
 | --- | ---: | ---: | ---: |
@@ -94,7 +102,7 @@ cd Experiments/WebRTC
 go test ./...
 ```
 
-The 10 XCTest checks cover app configuration, H.264 keyframes, the bitrate option, MJPEG and statistics endpoints, the bundled relay, cursor packet format, and timing summaries. The Go checks cover WebRTC video over UDP, picture-loss feedback, cursor delivery, and relay statistics. The Go suite also passes with `go test -race ./...`.
+The XCTest checks cover app configuration, H.264 keyframes in each WebRTC mode, capture settings for 640 × 480 at 60 fps, the bitrate option, MJPEG and statistics endpoints, the bundled relay, cursor packet format, and timing summaries. The Go checks cover WebRTC video over UDP, picture-loss feedback, cursor delivery, and relay statistics. The Go suite also passes with `go test -race ./...`.
 
 Local builds use ad hoc signing. After a rebuild, macOS may keep the screen-recording approval tied to an older copy of the app. To clear the old approval, quit Extnd and run:
 

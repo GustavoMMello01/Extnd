@@ -101,7 +101,7 @@ struct HomeView: View {
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                 }
             }
             .disabled(session.isBusy)
