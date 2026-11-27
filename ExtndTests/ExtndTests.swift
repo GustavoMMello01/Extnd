@@ -52,6 +52,7 @@ extension ExtndTests {
         defer { session.invalidateAndCancel() }
         let (page, _) = try await session.data(from: viewer)
         let html = String(decoding: page, as: UTF8.self)
+        XCTAssertFalse(html.contains("stream-frame"))
         let portStart = try XCTUnwrap(html.range(of: #"data-websocket-port=""#)?.upperBound)
         let port = try XCTUnwrap(Int(html[portStart...].prefix(while: { $0.isNumber })))
         let endpoint = try XCTUnwrap(URL(string: "ws://127.0.0.1:\(port)/"))
@@ -123,7 +124,7 @@ extension ExtndTests {
         XCTAssertTrue(html.contains(#"lang="en""#))
         XCTAssertTrue(html.contains("screen.mjpeg"))
         XCTAssertTrue(html.contains("frame.jpg"))
-        XCTAssertTrue(html.contains(#"id="stream-frame""#))
+        XCTAssertFalse(html.contains("stream-frame"))
         try await verifyViewerIcons(session: session, viewer: url, html: html)
 
         let (_, missingFrame) = try await session.data(from: frameURL)
@@ -139,13 +140,7 @@ extension ExtndTests {
         let statsURL = url.appendingPathComponent("stats")
         let (hiddenStats, _) = try await session.data(from: statsURL)
         XCTAssertEqual(try JSONSerialization.jsonObject(with: hiddenStats) as? [String: Bool],
-                       ["enabled": false, "blackBorder": true])
-
-        server.showsBlackBorder = false
-        let (borderOff, _) = try await session.data(from: statsURL)
-        XCTAssertEqual(try JSONSerialization.jsonObject(with: borderOff) as? [String: Bool],
-                       ["enabled": false, "blackBorder": false])
-        server.showsBlackBorder = true
+                       ["enabled": false])
 
         server.showsStatistics = true
         let (shownStats, statsResponse) = try await session.data(from: statsURL)
@@ -159,7 +154,7 @@ extension ExtndTests {
         server.showsStatistics = false
         let (disabledStats, _) = try await session.data(from: statsURL)
         XCTAssertEqual(try JSONSerialization.jsonObject(with: disabledStats) as? [String: Bool],
-                       ["enabled": false, "blackBorder": true])
+                       ["enabled": false])
 
         let wrongURL = url.deletingLastPathComponent().appendingPathComponent("wrong/frame.jpg")
         let (_, denied) = try await session.data(from: wrongURL)
@@ -335,6 +330,7 @@ extension ExtndTests {
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         let html = String(decoding: page, as: UTF8.self)
         XCTAssertTrue(html.contains("Start WebRTC"))
+        XCTAssertFalse(html.contains("stream-frame"))
         try await verifyViewerIcons(session: session, viewer: viewer, html: html)
 
         let keyFrame = expectation(description: "Capture server requested a key frame")

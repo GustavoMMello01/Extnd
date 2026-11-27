@@ -25,7 +25,6 @@ final class LocalScreenServer {
     private var encodedBytes = 0
     private let startedAt = ProcessInfo.processInfo.systemUptime
     var showsStatistics = false
-    var showsBlackBorder = true
     var showsTiming = false
     var peakLimitStatus: H264Encoder.PeakLimitStatus = .off
     private var captureTiming = TimingWindow()
@@ -43,7 +42,6 @@ final class LocalScreenServer {
 
     private struct Statistics: Encodable {
         let enabled: Bool
-        let blackBorder: Bool
         let codec: String?
         let frames: Int?
         let encodedBytes: Int?
@@ -277,7 +275,6 @@ final class LocalScreenServer {
         ) : nil
         let statistics = Statistics(
             enabled: showsStatistics,
-            blackBorder: showsBlackBorder,
             codec: showsStatistics ? streamLabel : nil,
             frames: showsStatistics ? frameNumber : nil,
             encodedBytes: showsStatistics ? encodedBytes : nil,
@@ -404,39 +401,12 @@ final class LocalScreenServer {
         return 1000 * (sum - previousSum) / (count - previousCount);
       }
 
-      window.startStreamStatistics = function (getPeer, video, getPicture, getImageStats) {
+      window.startStreamStatistics = function (getPeer, video, image, imageStats) {
         var panel = document.getElementById('stats');
-        var frame = document.getElementById('stream-frame');
-        var pictureRatio = 0;
         var previousSource;
         var previousReceiver;
         var previousPeer;
         var sampleNumber = 0;
-
-        function layoutFrame() {
-          if (!frame) return;
-          var picture = getPicture ? getPicture() : video;
-          if (!picture) return;
-          var width = picture.videoWidth || picture.naturalWidth;
-          var height = picture.videoHeight || picture.naturalHeight;
-          if (width && height) pictureRatio = width / height;
-          if (frame.hidden) return;
-
-          var rect = picture.getBoundingClientRect();
-          if (!rect.width || !rect.height) return;
-          var fittedWidth = pictureRatio ? Math.min(rect.width, rect.height * pictureRatio) : rect.width;
-          var fittedHeight = pictureRatio ? fittedWidth / pictureRatio : rect.height;
-          frame.style.left = (rect.left + (rect.width - fittedWidth) / 2) + 'px';
-          frame.style.top = (rect.top + (rect.height - fittedHeight) / 2) + 'px';
-          frame.style.width = fittedWidth + 'px';
-          frame.style.height = fittedHeight + 'px';
-        }
-
-        window.addEventListener('resize', layoutFrame);
-        if (video) {
-          video.addEventListener('loadedmetadata', layoutFrame);
-          video.addEventListener('resize', layoutFrame);
-        }
 
         function render(source, inbound, time) {
           var sourceSeconds = previousSource ? source.seconds - previousSource.seconds : 0;
@@ -465,8 +435,7 @@ final class LocalScreenServer {
 
           var details = [source.codec];
           if (video && video.videoWidth) details.push(video.videoWidth + ' × ' + video.videoHeight);
-          if (getImageStats && getPicture().naturalWidth) {
-            var image = getPicture();
+          if (image && image.naturalWidth) {
             details.push(image.naturalWidth + ' × ' + image.naturalHeight);
           }
           if (fps !== null) details.push(Math.round(fps) + ' fps decoded');
@@ -514,10 +483,6 @@ final class LocalScreenServer {
             setTimeout(tick, 1000);
             var source;
             try { if (request.status === 200) source = JSON.parse(request.responseText); } catch (error) {}
-            if (frame && source && typeof source.blackBorder === 'boolean' && frame.hidden === source.blackBorder) {
-              frame.hidden = !source.blackBorder;
-              layoutFrame();
-            }
             if (!source || !source.enabled) {
               reset();
             } else {
@@ -538,14 +503,13 @@ final class LocalScreenServer {
                   if (sampleNumber === sample) render(source, undefined, time);
                 });
               } else {
-                render(source, getImageStats ? getImageStats() : undefined, time);
+                render(source, imageStats, time);
               }
             }
           };
           request.send();
         }
         tick();
-        return layoutFrame;
       };
     }());
     """
@@ -573,14 +537,12 @@ final class LocalScreenServer {
     <style>
     body { margin:0; background:#131419; color:#f0f1f4; font:16px -apple-system,sans-serif; text-align:center }
     img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain }
-    #stream-frame { position:fixed; top:0; left:0; width:100%; height:100%; box-sizing:border-box; border:2px solid #000; pointer-events:none; z-index:1 }
     #status { z-index:2; position:relative; display:inline-block; margin:24px 12px; padding:9px 12px; background:#22242c; border:1px solid #373a46; border-radius:8px; color:#d1d5df; pointer-events:none }
     #status[hidden] { display:none }
     #mode { z-index:2; position:absolute; bottom:10px; right:10px; color:#c4d3ff; background:#22242c; border-radius:8px; padding:10px 12px; font-size:12px; text-decoration:none }
     #stats { z-index:2; position:absolute; top:8px; right:8px; margin:0; max-width:calc(100% - 32px); padding:3px 6px; border-radius:4px; background:rgba(0,0,0,.44); color:#fff; font-size:11px; line-height:1.3 }
     </style>
     <img id="screen" data-websocket-port="\(webSocketPort.map { String($0.rawValue) } ?? "")" alt="Extended Mac display" hidden>
-    <div id="stream-frame" aria-hidden="true" hidden></div>
     <p id="status" role="status">Waiting for the Mac display…</p>
     <a id="mode" href="?compat=1">Compatibility Mode</a>
     <p id="stats" hidden></p>
@@ -592,12 +554,12 @@ final class LocalScreenServer {
       var mode = document.getElementById('mode');
       var socketPort = screen.getAttribute('data-websocket-port');
       var compatibility = location.search === '?compat=1';
+      var usesWebSocket = !!socketPort && !compatibility;
       var imageStats = { framesDecoded: 0, bytesReceived: 0 };
-      var layoutFrame = window.startStreamStatistics
-        ? window.startStreamStatistics(null, null, function () { return screen; },
-            socketPort && !compatibility ? function () { return imageStats; } : null)
-        : function () {};
-      if (socketPort && !compatibility) {
+      if (window.startStreamStatistics) {
+        window.startStreamStatistics(null, null, usesWebSocket ? screen : null, usesWebSocket ? imageStats : null);
+      }
+      if (usesWebSocket) {
         var token = location.pathname.split('/')[1];
         var socket = new WebSocket('ws://' + location.hostname + ':' + socketPort + '/', token);
         socket.binaryType = 'arraybuffer';
@@ -613,7 +575,6 @@ final class LocalScreenServer {
             imageStats.framesDecoded++;
             screen.hidden = false;
             status.hidden = true;
-            layoutFrame();
             requestFrame();
           };
           screen.onerror = function () {
@@ -630,7 +591,7 @@ final class LocalScreenServer {
       }
       if (!compatibility) {
         screen.hidden = false;
-        screen.onload = function () { status.hidden = true; layoutFrame(); };
+        screen.onload = function () { status.hidden = true; };
         screen.onerror = function () {
           status.textContent = 'The stream stopped. Reload the page or try Compatibility Mode.';
           status.hidden = false;
@@ -647,7 +608,6 @@ final class LocalScreenServer {
           frame.alt = screen.alt;
           screen.parentNode.replaceChild(frame, screen);
           screen = frame;
-          layoutFrame();
           status.hidden = true;
           setTimeout(next, 85);
         };

@@ -24,14 +24,12 @@ video { background: #131419 }
 #controls #status { margin: 12px 0 0 }
 #controls #status:empty { display: none }
 video { width: 100%; height: 100vh; object-fit: contain; position: absolute; top: 0; left: 0 }
-#stream-frame { position: fixed; top: 0; left: 0; width: 100%; height: 100%; box-sizing: border-box; border: 2px solid #000; pointer-events: none; z-index: 1 }
 #pointer { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 2 }
 #stats { z-index: 3; position: absolute; top: 8px; right: 8px; margin: 0; max-width: calc(100% - 32px); padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,.44); color: white; font-size: 11px; line-height: 1.3; text-align: right; white-space: pre-line; pointer-events: none }
 </style>
 </head>
 <body>
 <video id="screen" autoplay muted playsinline></video>
-<div id="stream-frame" aria-hidden="true" hidden></div>
 <canvas id="pointer" width="18" height="24" hidden aria-hidden="true"></canvas>
 <section id="controls">
   <h1>Extnd</h1>
