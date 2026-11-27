@@ -41,7 +41,7 @@ flowchart LR
 | JPEG and QR generation | Core Image | Encodes independent JPEGs for MJPEG and WebSocket and produces a QR code for the session's viewer URL. |
 | Mac-local service | Network.framework | Hosts the JPEG viewers, responds to viewer statistics, and supplies the H.264 feed and relay controls. The H.264 feed and WebRTC control endpoints check that the requester is local and holds the session path. |
 | Relay and deployment | Go, Pion WebRTC v4.2.29, Xcode | Packetizes H.264, runs WebRTC signaling, and forwards media and cursor data. A build phase builds the required architectures, embeds the relay in `Extnd.app/Contents/Helpers`, and signs it before the app bundle is signed. |
-| Browser | Safari, HTML, CSS, JavaScript, Canvas | Plays the video, displays the optional statistics overlay, draws the experimental cursor when the separate channel is active, and renders the optional picture border separately from the video. |
+| Browser | Safari, HTML, CSS, JavaScript, Canvas | Plays the video, displays the optional statistics overlay, and draws the experimental cursor when the separate channel is active. |
 | Tests | XCTest, Go test and the Go race detector | Cover configuration, encoder output, HTTP behavior, managed relay startup, UDP media, picture-loss feedback, cursor messages, and timing summaries. |
 
 ### Video formats and transport

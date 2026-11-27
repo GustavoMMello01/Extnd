@@ -5,7 +5,6 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var session: SharingSession
     @AppStorage("streamingMode") private var mode: StreamingMode = .mjpeg
-    @AppStorage("blackViewerBorder") private var blackBorder = true
     @State private var preferredAddress: String?
     @State private var showsAdvanced = false
     @State private var fastCursor = false
@@ -33,9 +32,10 @@ struct HomeView: View {
                         viewerSettings
                     } else {
                         setupView
-                        Divider()
-                        setting("Black border on iPad", isOn: $blackBorder)
-                        if mode.usesWebRTC { advancedSettings }
+                        if mode.usesWebRTC {
+                            Divider()
+                            advancedSettings
+                        }
                     }
 
                     if let message = session.message {
@@ -57,7 +57,6 @@ struct HomeView: View {
         .frame(minWidth: 500, minHeight: 380)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { session.refreshAddresses() }
-        .onChange(of: blackBorder, initial: true) { _, value in session.showsBlackBorder = value }
         .onChange(of: session.url) { _, _ in copiedAddress = false }
     }
 
@@ -154,7 +153,6 @@ struct HomeView: View {
 
     private var viewerSettings: some View {
         VStack(spacing: 11) {
-            setting("Black border on iPad", isOn: $blackBorder)
             setting("Show Streaming Stats on iPad", isOn: $session.showsStatistics)
             if session.usesWebRTC && session.showsStatistics {
                 setting("Show Timing Details on iPad", isOn: $session.showsTiming)
